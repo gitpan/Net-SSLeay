@@ -23,7 +23,6 @@ examples/sslecho.pl
 examples/stdio_bulk.pl
 examples/tcpcat.pl
 examples/tcpecho.pl
-inc/Array/Compare.pm
 inc/Module/AutoInstall.pm
 inc/Module/Install.pm
 inc/Module/Install/AutoInstall.pm
@@ -38,11 +37,6 @@ inc/Module/Install/Metadata.pm
 inc/Module/Install/PRIVATE/Net/SSLeay.pm
 inc/Module/Install/Win32.pm
 inc/Module/Install/WriteAll.pm
-inc/Sub/Uplevel.pm
-inc/Test/Exception.pm
-inc/Test/NoWarnings.pm
-inc/Test/Warn.pm
-inc/Tree/DAG_Node.pm
 lib/Net/SSLeay.pm
 lib/Net/SSLeay/Handle.pm
 Makefile.PL

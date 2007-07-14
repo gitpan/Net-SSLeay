@@ -15,8 +15,6 @@ build_requires('Test::Exception');
 build_requires('Array::Compare');
 build_requires('Tree::DAG_Node');
 build_requires('Test::Warn');
-build_requires('Test::NoWarnings');
-
 requires('MIME::Base64');
 
 clean_files(map { fixpath($_) } qw(
@@ -33,6 +31,5 @@ clean_files(map { fixpath($_) } qw(
 
 no_index( directory => qw( inc ext ) );
 
-auto_include;
-auto_install;
-WriteAll;
+auto_install();
+WriteAll();

@@ -63,12 +63,15 @@
  *            These changes to deal with thread safety issues.
  * 01.08.2006 set_*fd nw woork with filehandles as well as filenos on Windows
  *
- * $Id: SSLeay.xs 180 2007-06-17 00:34:54Z mikem-guest $
+ * $Id: SSLeay.xs 188 2007-07-11 00:41:53Z mikem-guest $
  * 
  * The distribution and use of this module are subject to the conditions
  * listed in LICENSE file at the root of OpenSSL-0.9.6b
  * distribution (i.e. free, but mandatory attribution and NO WARRANTY).
  */
+
+/* Prevent warnings about strncpy from Windows compilers */
+#define _CRT_SECURE_NO_DEPRECATE
 
 #ifdef __cplusplus
 extern "C" {
@@ -114,7 +117,8 @@ extern "C" {
 
 /* ============= typedefs to agument TYPEMAP ============== */
 
-typedef void callback_no_ret();
+typedef void callback_no_ret(void);
+typedef void cb_ssl_int_int_ret_void(const SSL *ssl,int,int);
 typedef RSA * cb_ssl_int_int_ret_RSA(SSL * ssl,int is_export, int keylength);
 typedef DH * cb_ssl_int_int_ret_DH(SSL * ssl,int is_export, int keylength);
 
@@ -817,7 +821,7 @@ SSL_write_partial(s,from,count,buf)
        croak("from beyound end of buffer");
        RETVAL = -1;
      } else
-       RETVAL = SSL_write (s, &(buf[from]), (count<=len)?count:len);
+       RETVAL = SSL_write (s, &(buf[from]), ((STRLEN)count<=len)?count:len);
      OUTPUT:
      RETVAL
 
@@ -1985,7 +1989,7 @@ SSL_set_ex_data(ssl,idx,data)
 void 
 SSL_set_info_callback(ssl,cb)
      SSL *	ssl
-     callback_no_ret *  cb
+     cb_ssl_int_int_ret_void *  cb
 
 int 
 SSL_set_purpose(s,purpose)
