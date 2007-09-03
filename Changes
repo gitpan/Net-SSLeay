@@ -223,4 +223,13 @@ Revision history for Perl extension Net::SSLeay.
 	on Windows
 	- Removed auto_include from Makefile.PL
 	- Removed build_requires('Test::NoWarnings') from Makefile.PL
+	- Testing with Strawberry Perl on Windows XP SP2, added doc to
+	README.Win32
+	- Testing with Perl CamelPack 5.8.7 on Windows XP SP2,added doc to
+	README.Win32
+
+1.32 03.08.2007
+	- Don't let the tests die when something unexpected happens. Just BAIL_OUT.
+	- Some Win32 improvements.
+
 #EOF
