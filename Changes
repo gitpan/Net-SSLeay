@@ -227,9 +227,56 @@ Revision history for Perl extension Net::SSLeay.
 	README.Win32
 	- Testing with Perl CamelPack 5.8.7 on Windows XP SP2,added doc to
 	README.Win32
-
+	- Added optional support for SSL_set_hello_extension,
+	SSL_set_session_secret_cb to support various extension patches from 
+	a patch to openssl-0.9.9-dev contributed by Jouni Malinen. 
+	See wpa_supplicant/patches/openssl-0.9.9-session-ticket.patch in the
+	latest (git) version 0.6 and later of wpa_suplicant at 
+	http://hostap.epitest.fi/. These additions are ifdefed to 
+	SSL_F_SSL_SET_HELLO_EXTENSION which is added by the patch
+	Tested with openssl-SNAP-20070816.
+	- Added SSL_SESSION_set_master_key and SSL_get_keyblock_size.
+	- Added all SSL_OP_* options flags present in 0.9.9
+	- Fixed a bug in SSL_set_tmp_dh
+	- Doc improvements in README.Win32
 1.32 03.08.2007
 	- Don't let the tests die when something unexpected happens. Just BAIL_OUT.
 	- Some Win32 improvements.
 
+1.33_01 14.02.2008
+	- Fixed a compile problem with inc_paths /usr/kerberos/include
+	in inc/Module/Install/PRIVATE/Net/SSLeay.pm. Reported by "J. Nick
+	Koston via RT"
+	- Added optional support for SSL_set_hello_extension,
+        SSL_set_session_secret_cb to support various extension patches from
+        a patch to openssl-0.9.9-dev contributed by Jouni Malinen.
+        See wpa_supplicant/patches/openssl-0.9.9-session-ticket.patch in the
+        latest (git) version 0.6 and later of wpa_suplicant at
+        http://hostap.epitest.fi/. These additions are ifdefed to
+        SSL_F_SSL_SET_HELLO_EXTENSION which is added by the patch
+        Tested with openssl-SNAP-20070816.
+        - Added SSL_SESSION_set_master_key and SSL_get_keyblock_size.
+        - Added all SSL_OP_* options flags present in 0.9.9
+        - Fixed a bug in SSL_set_tmp_dh
+        - Doc improvements in README.Win32
+	- Fixed a problem with proxy connections: open_proxy_tcp_connection
+	was stopping after the first \n from teh proxy, 
+	but instead should have looked for
+	$CRLF . $CRLF to find the beginning of the SSL content
+	- Fixed missing / on /usr/kerberos/include, reported by several people
+	- removed bacus.pt from host list in t/handle/external/10_destroy.t,
+	since it seems no longer to respond. Reported by tco2.
+	- changed t/handle/external/10_destroy.t so this list of URIs to be
+	tested can be configured with environment variable SSLEAY_URIS, a
+	colon separated list of host names. Suggested by tco2.
+	- changed t/handle/external/50_external.t and t/external/08_external.t 
+	so this list of sites to be
+	tested can be configured with environment variable SSLEAY_SITES, a
+	colon separated list of host names. Suggested by tco2.
+	- Fixed doucumentation in README of how to use OPENSSL_PREFIX
+	environment variable to control the location of openssl. Reported by 
+	"Quanah Gibson-Mount via RT".
+	- Don't use Module::Installs auto_install.
+	- Bind NID_ and GEN_ constants.
+	- Default to not running external tests.
 #EOF

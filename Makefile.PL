@@ -10,11 +10,6 @@ all_from('lib/Net/SSLeay.pm');
 
 ssleay();
 
-build_requires('Sub::Uplevel');
-build_requires('Test::Exception');
-build_requires('Array::Compare');
-build_requires('Tree::DAG_Node');
-build_requires('Test::Warn');
 requires('MIME::Base64');
 
 clean_files(map { fixpath($_) } qw(
@@ -31,5 +26,4 @@ clean_files(map { fixpath($_) } qw(
 
 no_index( directory => qw( inc ext ) );
 
-auto_install();
 WriteAll();

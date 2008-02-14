@@ -1,14 +1,9 @@
 --- 
 abstract: Perl extension for using OpenSSL
-author: Maintained by Mike McCauley and Florian Ragwitz since November 2005
-build_requires: 
-  Array::Compare: 0
-  Sub::Uplevel: 0
-  Test::Exception: 0
-  Test::Warn: 0
-  Tree::DAG_Node: 0
+author: 
+  - Maintained by Mike McCauley and Florian Ragwitz since November 2005
 distribution_type: module
-generated_by: Module::Install version 0.67
+generated_by: Module::Install version 0.68
 license: unknown
 meta-spec: 
   url: http://module-build.sourceforge.net/META-spec-v1.3.html
@@ -23,4 +18,4 @@ no_index:
 requires: 
   MIME::Base64: 0
 tests: t/*/*.t t/*/*/*.t
-version: 1.32
+version: 1.33_01

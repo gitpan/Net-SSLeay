@@ -48,7 +48,7 @@ EOM
     if ( $self->prompt(
             "Do you want to run external tests?\n".
             "These tests *will* *fail* if you do not have network connectivity.",
-            'y',
+            'n',
     ) =~ /^y/i ) {
         $self->tests('t/*/*.t t/*/*/*.t');
     } else {
@@ -60,7 +60,7 @@ sub ssleay_get_build_opts {
     my ($self, $prefix, $exec) = @_;
 
     my $opts = {
-        inc_paths  => ["$prefix/include", "$prefix/inc32", 'usr/kerberos/include'],
+        inc_paths  => ["$prefix/include", "$prefix/inc32", '/usr/kerberos/include'],
         lib_paths  => [$prefix, "$prefix/lib", "$prefix/out32dll"],
         lib_links  => [],
         cccdlflags => '',
