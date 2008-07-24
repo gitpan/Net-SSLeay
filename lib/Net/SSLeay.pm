@@ -106,7 +106,7 @@ $Net::SSLeay::slowly = 0;
 $Net::SSLeay::random_device = '/dev/urandom';
 $Net::SSLeay::how_random = 512;
 
-$VERSION = '1.33_01';
+$VERSION = '1.34';
 @ISA = qw(Exporter);
 @EXPORT_OK = qw(
     AT_MD5_WITH_RSA_ENCRYPTION
@@ -1087,11 +1087,13 @@ Following new functions behave in perlish way:
                                     # figures out the size of $foo
 
 In order to use the low level API you should start your programs with
-the following encantation:
+the following incantation:
 
 	use Net::SSLeay qw(die_now die_if_ssl_error);
 	Net::SSLeay::load_error_strings();
-	Net::SSLeay::SSLeay_add_ssl_algorithms();   # Important!
+	Net::SSLeay::SSLeay_add_ssl_algorithms();    # Important!
+        Net::SSLeay::ENGINE_load_builtin_engines();  # If you want built-in engines
+        Net::SSLeay::ENGINE_register_all_complete(); # If you want built-in engines
         Net::SSLeay::randomize();
 
 C<die_now()> and C<die_if_ssl_error()> are used to conveniently print SSLeay error
@@ -1194,6 +1196,12 @@ as I was lazy and needed them, the following kludges are implemented:
     $x509_name = Net::SSLeay::X509_get_issuer_name($x509_cert);
     print Net::SSLeay::X509_NAME_oneline($x509_name);
     $text = Net::SSLeay::X509_NAME_get_text_by_NID($name, $nid);
+
+    ($type1, $subject1, $type2, $subject2, ...) =
+       Net::SSLeay::X509_get_subjectAltNames($x509_cert)
+
+    subjectAltName types as per x509v3.h GEN_*, for example
+    GEN_DNS or GEN_IPADD which can be imported.
 
     Net::SSLeay::RAND_seed($buf);   # Perlishly figures out buf size
     Net::SSLeay::RAND_bytes($buf, $num);
