@@ -2,7 +2,7 @@
 
 use strict;
 use warnings;
-use Test::More tests => 69;
+use Test::More tests => 70;
 use Socket;
 use File::Spec;
 use Symbol qw(gensym);
@@ -13,7 +13,7 @@ my $pid;
 
 my $port = 1212;
 my $dest_ip = gethostbyname('localhost');
-my $dest_serv_params  = pack ('S n a4 x8', AF_INET, $port, $dest_ip);
+my $dest_serv_params  = sockaddr_in($port, $dest_ip);
 
 my $msg = 'ssleay-test';
 my $cert_pem = File::Spec->catfile('t', 'data', 'cert.pem');
@@ -31,7 +31,7 @@ Net::SSLeay::library_init();
 
 {
     my $ip = "\x7F\0\0\x01";
-    my $serv_params = pack ('S n a4 x8', AF_INET, $port, $ip);
+    my $serv_params = sockaddr_in($port, $ip);
     $sock = gensym();
     socket($sock, AF_INET, SOCK_STREAM, 0) or BAIL_OUT("failed to open socket: $!");
     bind($sock, $serv_params) or BAIL_OUT("failed to bind socket: $!");
@@ -231,6 +231,9 @@ my @results;
 
     sub verify {
         my ($ok, $x509_store_ctx) = @_;
+	return 1 unless $ok; # openssl 1.0 calls us twice with ok = 0 then ok = 1
+
+
         $verify_cb_1_called++;
 
         push @results, [ $ok, 'verify cb' ];
@@ -244,23 +247,32 @@ my @results;
         my $subject_name = Net::SSLeay::X509_get_subject_name( $cert );
         my $subject = Net::SSLeay::X509_NAME_oneline( $subject_name );
 
+        my $cn = Net::SSLeay::X509_NAME_get_text_by_NID($subject_name, &Net::SSLeay::NID_commonName);
+printf "GOT $cn\n";
         push @results, [ $issuer  eq $cert_name, 'cert issuer'  ];
         push @results, [ $subject eq $cert_name, 'cert subject' ];
+        push @results, [ substr($cn, length($cn) - 1, 1) ne "\0", 'tailing 0 character is not returned from get_text_by_NID' ];
 
         return 1;
     }
 
     sub verify2 {
+        my ($ok, $x509_store_ctx) = @_;
+	return 1 unless $ok;# openssl 1.0 calls us twice with ok = 0 then ok = 1
         $verify_cb_2_called++;
         return 1;
     }
 
     sub verify3 {
+        my ($ok, $x509_store_ctx) = @_;
+	return 1 unless $ok;# openssl 1.0 calls us twice with ok = 0 then ok = 1
         $verify_cb_3_called++;
         return 1;
     }
 
     sub verify4 {
+        my ($ok, $x509_store_ctx) = @_;
+	return 1 unless $ok;# openssl 1.0 calls us twice with ok = 0 then ok = 1
         my ($cert_store, $userdata) = @_;
         push @results, [$userdata == 1, 'CTX_set_cert_verify_callback'];
         return $userdata;

@@ -17,8 +17,15 @@ my $out = gensym();
 my $err = gensym();
 
 my @extraargs;
-push(@extraargs, '/nologo') if $^O eq 'MSWin32' && $Config{cc} eq 'cl';
-my $cmd = "$Config{cc} -o $output $input " . join(' ', @extraargs);
+my $cmd;
+if($^O eq 'MSWin32' && $Config{cc} eq 'cl') {
+  push(@extraargs, '/nologo ' . $Config{libs});
+  $cmd = "$Config{cc} /Fe$output $input " . join(' ', @extraargs);
+}
+else {
+    push(@extraargs, '-Zexe') if $^O eq 'os2';
+    $cmd = "$Config{cc} -o $output $input " . join(' ', @extraargs)
+}
 diag( "compiling test program with: $cmd" );
 my $pid = open3(undef, $out, $err, $cmd);
 waitpid $pid, 0;

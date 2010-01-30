@@ -89,18 +89,30 @@ extern "C" {
  */
 #undef _
 
+/* Sigh: openssl 1.0 has
+ typedef void *BLOCK;
+which conflicts with perls
+ typedef struct block BLOCK;
+*/
+#define BLOCK OPENSSL_BLOCK
 #include <openssl/err.h>
 #include <openssl/lhash.h>
 #include <openssl/rand.h>
 #include <openssl/buffer.h>
 #include <openssl/ssl.h>
 #include <openssl/comp.h>    /* openssl-0.9.6a forgets to include this */
+#ifndef OPENSSL_NO_MD2
 #include <openssl/md2.h>
+#endif
 #include <openssl/md4.h>
 #include <openssl/md5.h>     /* openssl-SNAP-20020227 does not automatically include this */
+#if OPENSSL_VERSION_NUMBER >= 0x00905000L
+#include <openssl/ripemd.h>
+#endif
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 #include <openssl/engine.h>
+#undef BLOCK
 
 /* Debugging output */
 
@@ -470,7 +482,7 @@ ssleay_ctx_cert_verify_cb_invoke(X509_STORE_CTX* x509_store_ctx, void* data) {
 	return res;
 }
 
-#ifdef SSL_F_SSL_SET_HELLO_EXTENSION
+#if defined(SSL_F_SSL_SET_HELLO_EXTENSION) || defined(SSL_F_SSL_SET_SESSION_TICKET_EXT)
 static HV* ssleay_session_secret_cbs = (HV*)NULL;
 
 ssleay_session_secret_cb_t*
@@ -1243,6 +1255,14 @@ SSL_CTX_set_options(ctx,op)
      SSL_CTX *      ctx
      long	    op
 
+#if OPENSSL_VERSION_NUMBER >= 0x10000000L
+
+struct lhash_st_SSL_SESSION *
+SSL_CTX_sessions(ctx)
+     SSL_CTX *          ctx
+
+#else
+
 LHASH *
 SSL_CTX_sessions(ctx)
      SSL_CTX *          ctx
@@ -1252,6 +1272,8 @@ SSL_CTX_sessions(ctx)
      RETVAL = ctx -> sessions;
      OUTPUT:
      RETVAL
+
+#endif
 
 unsigned long
 SSL_CTX_sess_number(ctx)
@@ -1499,9 +1521,6 @@ X509_NAME_oneline(name)
 		sv_setpvn( ST(0), buf, strlen(buf));
 	OPENSSL_free(buf); /* mem was allocated by openssl */
 
-# WTF is the point of this function?
-# The NID_* constants aren't bound anyway and no one can remember
-# those undocumented numbers anyway.
 void
 X509_NAME_get_text_by_NID(name,nid)
 	X509_NAME *    name
@@ -1515,7 +1534,7 @@ X509_NAME_get_text_by_NID(name,nid)
 
 	New(0, buf, length+1, char);
 	if (X509_NAME_get_text_by_NID(name, nid, buf, length + 1))
-		sv_setpvn( ST(0), buf, length + 1);
+		sv_setpvn( ST(0), buf, length);
 	Safefree(buf);
 
 X509 *
@@ -1729,6 +1748,9 @@ PEM_get_string_X509(x509)
          sv_setpvn( ST(0), buffer, i );
      BIO_free(bp);
 
+
+#ifndef OPENSSL_NO_MD2
+
 void
 MD2(data)
 	PREINIT:
@@ -1744,6 +1766,8 @@ MD2(data)
 	} else {
 		XSRETURN_UNDEF;
 	}
+
+#endif
 
 void
 MD4(data)
@@ -1776,6 +1800,26 @@ MD5(data)
      } else {
 	  XSRETURN_UNDEF;
      }
+
+#if OPENSSL_VERSION_NUMBER >= 0x00905000L
+
+void 
+RIPEMD160(data)
+     PREINIT:
+     STRLEN len;
+     unsigned char md[RIPEMD160_DIGEST_LENGTH];
+     unsigned char * ret;
+     INPUT:
+     unsigned char *  data = (unsigned char *) SvPV( ST(0), len);
+     CODE:
+     ret = RIPEMD160(data,len,md);
+     if (ret!=NULL) {
+	  XSRETURN_PVN((char *) md, RIPEMD160_DIGEST_LENGTH);
+     } else {
+	  XSRETURN_UNDEF;
+     }
+
+#endif
 
 SSL_METHOD *
 SSLv2_method()
@@ -1978,6 +2022,10 @@ SSL_CTX_set_cert_verify_callback(ctx,func,data=NULL)
 		SSL_CTX_set_cert_verify_callback(ctx, ssleay_ctx_cert_verify_cb_invoke, cb);
 	}
 
+X509_NAME_STACK *
+SSL_CTX_get_client_CA_list(ctx)
+	SSL_CTX *ctx
+
 void 
 SSL_CTX_set_client_CA_list(ctx,list)
      SSL_CTX *	ctx
@@ -2124,10 +2172,14 @@ int
 SSL_renegotiate(s)
      SSL *	s
 
+#if OPENSSL_VERSION_NUMBER < 0x10000000L
+
 int	
 SSL_SESSION_cmp(a,b)
      SSL_SESSION *	a
      SSL_SESSION *	b
+
+#endif
 
 void *
 SSL_SESSION_get_ex_data(ss,idx)
@@ -2166,6 +2218,23 @@ SSL_SESSION_set_timeout(s,t)
 void 
 SSL_set_accept_state(s)
      SSL *	s
+
+void
+sk_X509_NAME_free(sk)
+	X509_NAME_STACK *sk
+
+int
+sk_X509_NAME_num(sk)
+	X509_NAME_STACK *sk
+
+X509_NAME *
+sk_X509_NAME_value(sk,i)
+	X509_NAME_STACK *sk
+	int i
+
+X509_NAME_STACK *
+SSL_get_client_CA_list(s)
+	SSL *	s
 
 void 
 SSL_set_client_CA_list(s,list)
@@ -2637,7 +2706,7 @@ SSL_get_keyblock_size(s)
 
 
 
-#ifdef SSL_F_SSL_SET_HELLO_EXTENSION
+#if defined(SSL_F_SSL_SET_HELLO_EXTENSION)
 int
 SSL_set_hello_extension(s, type, data)
      SSL *   s
@@ -2650,6 +2719,10 @@ SSL_set_hello_extension(s, type, data)
      RETVAL = SSL_set_hello_extension(s, type, data, len);
      OUTPUT:
      RETVAL
+
+#endif
+
+#if defined(SSL_F_SSL_SET_HELLO_EXTENSION) || defined(SSL_F_SSL_SET_SESSION_TICKET_EXT)
 
 void 
 SSL_set_session_secret_cb(s,func,data=NULL)
@@ -2668,6 +2741,18 @@ SSL_set_session_secret_cb(s,func,data=NULL)
 			   STACK_OF(SSL_CIPHER) *peer_ciphers,
 			   SSL_CIPHER **cipher, void *arg))&ssleay_session_secret_cb_invoke, cb);
 	}
+
+#endif
+
+int EVP_add_digest(const EVP_MD *digest)
+
+#if OPENSSL_VERSION_NUMBER >= 0x0090800fL
+
+#ifndef OPENSSL_NO_SHA256
+
+const EVP_MD *EVP_sha256()
+
+#endif
 
 #endif
 
