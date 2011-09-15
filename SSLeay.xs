@@ -63,7 +63,7 @@
  *            These changes to deal with thread safety issues.
  * 01.08.2006 set_*fd nw woork with filehandles as well as filenos on Windows
  *
- * $Id$
+ * $Id: SSLeay.xs 273 2011-07-25 20:52:27Z mikem-guest $
  * 
  * The distribution and use of this module are subject to the conditions
  * listed in LICENSE file at the root of OpenSSL-0.9.6b
@@ -100,6 +100,7 @@ which conflicts with perls
 #include <openssl/rand.h>
 #include <openssl/buffer.h>
 #include <openssl/ssl.h>
+#include <openssl/pkcs12.h>
 #include <openssl/comp.h>    /* openssl-0.9.6a forgets to include this */
 #ifndef OPENSSL_NO_MD2
 #include <openssl/md2.h>
@@ -724,12 +725,18 @@ SSL_CTX_new()
      OUTPUT:
      RETVAL
 
+#ifndef OPENSSL_NO_SSL2
+#if OPENSSL_VERSION_NUMBER < 0x10000000L
+
 SSL_CTX *
 SSL_CTX_v2_new()
      CODE:
      RETVAL = SSL_CTX_new (SSLv2_method());
      OUTPUT:
      RETVAL
+
+#endif
+#endif
 
 SSL_CTX *
 SSL_CTX_v3_new()
@@ -1532,10 +1539,12 @@ X509_NAME_get_text_by_NID(name,nid)
 	ST(0) = sv_newmortal();   /* Undefined to start with */
 	length = X509_NAME_get_text_by_NID(name, nid, NULL, 0);
 
-	New(0, buf, length+1, char);
-	if (X509_NAME_get_text_by_NID(name, nid, buf, length + 1))
-		sv_setpvn( ST(0), buf, length);
-	Safefree(buf);
+       if (length>=0) {				 
+               New(0, buf, length+1, char);
+               if (X509_NAME_get_text_by_NID(name, nid, buf, length + 1)>=0)
+                       sv_setpvn( ST(0), buf, length);
+               Safefree(buf);
+       }
 
 X509 *
 X509_STORE_CTX_get_current_cert(x509_store_ctx)
@@ -1545,6 +1554,46 @@ void *
 X509_STORE_CTX_get_ex_data(x509_store_ctx,idx)
      X509_STORE_CTX * x509_store_ctx
      int idx
+
+void
+X509_get_fingerprint(cert,type)
+		X509 * 	cert
+		char *	type
+	PREINIT:
+		const EVP_MD *digest_tp = NULL;
+		unsigned char digest[EVP_MAX_MD_SIZE];
+		unsigned int dsz, k = 0;
+		char text[EVP_MAX_MD_SIZE * 3 + 1];
+	CODE:
+		if (!k && !strcmp(type,"md5")) {
+		 	k = 1; digest_tp = EVP_md5();
+		}
+		if (!k && !strcmp(type,"sha1")) {
+			k = 1; digest_tp = EVP_sha1();
+		}
+		if (!k && !strcmp(type,"sha256")) {
+			k = 1; digest_tp = EVP_sha256();
+		}
+		if (!k && !strcmp(type,"ripemd160")) {
+			k = 1; digest_tp = EVP_ripemd160();
+		}
+		if (!k)	/* Default digest */
+			digest_tp = EVP_sha1();
+		if ( digest_tp == NULL ) {
+			/* Out of memory */
+			XSRETURN_UNDEF;
+		}
+		if (!X509_digest(cert, digest_tp, digest, &dsz)) {
+			/* Out of memory */
+			XSRETURN_UNDEF;
+		}
+		text[0] = '\0';
+		for(k=0; k<dsz; k++) {
+			sprintf(&text[strlen(text)], "%02X:", digest[k]);
+		}
+		text[strlen(text)-1] = '\0';
+		ST(0) = sv_newmortal();   /* Undefined to start with */
+		sv_setpvn( ST(0), text, strlen(text));
 
 void
 X509_get_subjectAltNames(cert)
@@ -1654,11 +1703,6 @@ X509_STORE_add_crl(ctx, x)
     X509_STORE *ctx
     X509_CRL *x
 
-void 
-X509_STORE_CTX_set_flags(ctx, flags)
-    X509_STORE_CTX *ctx
-    long flags
-
 #if OPENSSL_VERSION_NUMBER >= 0x0090800fL
 
 void 
@@ -1675,6 +1719,11 @@ void
 X509_STORE_set_trust(ctx, trust)
     X509_STORE *ctx
     int trust
+
+int 
+X509_STORE_set1_param(ctx, pm)
+    X509_STORE *ctx
+    X509_VERIFY_PARAM *pm
 
 #endif
 
@@ -1748,6 +1797,45 @@ PEM_get_string_X509(x509)
          sv_setpvn( ST(0), buffer, i );
      BIO_free(bp);
 
+int
+CTX_use_PKCS12_file(ctx, file, password)
+    SSL_CTX *          ctx
+    char *             file
+    char *             password
+    PREINIT:
+    BIO *bio;
+    int i;
+    int count;
+    char buffer[16384];
+    PKCS12 *p12;
+    EVP_PKEY* private_key;
+    X509* certificate;
+    SSL_CTX *          ctx1;
+    CODE:
+    RETVAL = 1;
+
+    FILE *fp = fopen (file, "r");   
+    bio = BIO_new(BIO_s_mem());
+    while(count = fread(buffer, 1, sizeof(buffer), fp))
+	BIO_write(bio, buffer, count);
+    fclose(fp);
+
+    OPENSSL_add_all_algorithms_noconf();
+    p12 = d2i_PKCS12_bio(bio, NULL);
+    if (!p12)
+    	RETVAL = 0;
+    BIO_free(bio);
+    if (RETVAL && !PKCS12_parse(p12, password, &private_key, &certificate, NULL))
+    	RETVAL = 0;
+    PKCS12_free(p12);
+    if (RETVAL && !SSL_CTX_use_PrivateKey(ctx, private_key))
+    	RETVAL = 0;
+    if (RETVAL && !SSL_CTX_use_certificate(ctx, certificate))
+    	RETVAL = 0;
+    if (!RETVAL)
+        ERR_print_errors_fp(stderr);
+    OUTPUT:
+    RETVAL
 
 #ifndef OPENSSL_NO_MD2
 
@@ -1821,8 +1909,14 @@ RIPEMD160(data)
 
 #endif
 
+#ifndef OPENSSL_NO_SSL2 
+#if OPENSSL_VERSION_NUMBER < 0x10000000L
+
 SSL_METHOD *
 SSLv2_method()
+
+#endif
+#endif
 
 SSL_METHOD *
 SSLv3_method()
@@ -2755,5 +2849,197 @@ const EVP_MD *EVP_sha256()
 #endif
 
 #endif
+
+#if OPENSSL_VERSION_NUMBER >= 0x10000000L
+
+int
+SSL_CTX_set1_param(ctx, vpm)
+     SSL_CTX *          ctx
+     X509_VERIFY_PARAM *vpm
+
+int
+SSL_set1_param(ctx, vpm)
+     SSL_CTX *          ctx
+     X509_VERIFY_PARAM *vpm
+
+#endif
+
+X509_VERIFY_PARAM *
+X509_VERIFY_PARAM_new()
+
+void 
+X509_VERIFY_PARAM_free(param)
+     X509_VERIFY_PARAM *param
+
+int
+X509_VERIFY_PARAM_inherit(to, from)
+     X509_VERIFY_PARAM *to
+     X509_VERIFY_PARAM *from
+
+int
+X509_VERIFY_PARAM_set1(to, from)
+     X509_VERIFY_PARAM *to
+     X509_VERIFY_PARAM *from
+
+int
+X509_VERIFY_PARAM_set1_name(param, name)
+     X509_VERIFY_PARAM *param
+     const char *name
+
+int 
+X509_VERIFY_PARAM_set_flags(param, flags)
+    X509_VERIFY_PARAM *param
+    unsigned long flags
+
+int 
+X509_VERIFY_PARAM_clear_flags(param, flags)
+    X509_VERIFY_PARAM *param
+    unsigned long flags
+
+unsigned long 
+X509_VERIFY_PARAM_get_flags(param)
+     X509_VERIFY_PARAM *param
+
+int 
+X509_VERIFY_PARAM_set_purpose(param, purpose)
+    X509_VERIFY_PARAM *param
+    int purpose
+
+int 
+X509_VERIFY_PARAM_set_trust(param, trust)
+    X509_VERIFY_PARAM *param
+    int trust
+
+void 
+X509_VERIFY_PARAM_set_depth(param, depth)
+    X509_VERIFY_PARAM *param
+    int depth
+
+void 
+X509_VERIFY_PARAM_set_time(param, t)
+    X509_VERIFY_PARAM *param
+    time_t t
+
+int 
+X509_VERIFY_PARAM_add0_policy(param, policy)
+    X509_VERIFY_PARAM *param
+    ASN1_OBJECT *policy
+
+int 
+X509_VERIFY_PARAM_set1_policies(param, policies)
+    X509_VERIFY_PARAM *param
+    STACK_OF(ASN1_OBJECT) *policies
+
+int 
+X509_VERIFY_PARAM_get_depth(param)
+    X509_VERIFY_PARAM *param
+
+int 
+X509_VERIFY_PARAM_add0_table(param)
+    X509_VERIFY_PARAM *param
+
+X509_VERIFY_PARAM *
+X509_VERIFY_PARAM_lookup(name)
+    const char *name
+
+void 
+X509_VERIFY_PARAM_table_cleanup()
+
+void 
+X509_policy_tree_free(tree)
+    X509_POLICY_TREE *tree
+
+int 
+X509_policy_tree_level_count(tree)
+    X509_POLICY_TREE *tree
+
+X509_POLICY_LEVEL *
+X509_policy_tree_get0_level(tree, i)
+    X509_POLICY_TREE *tree
+    int i
+
+STACK_OF(X509_POLICY_NODE) *
+X509_policy_tree_get0_policies(tree)
+    X509_POLICY_TREE *tree
+
+STACK_OF(X509_POLICY_NODE) *
+X509_policy_tree_get0_user_policies(tree)
+    X509_POLICY_TREE *tree
+
+int 
+X509_policy_level_node_count(level)
+    X509_POLICY_LEVEL *level
+
+X509_POLICY_NODE *
+X509_policy_level_get0_node(level, i)
+    X509_POLICY_LEVEL *level
+    int i
+
+ASN1_OBJECT *
+X509_policy_node_get0_policy(node)
+    X509_POLICY_NODE *node
+
+STACK_OF(POLICYQUALINFO) *
+X509_policy_node_get0_qualifiers(node)
+    X509_POLICY_NODE *node
+
+X509_POLICY_NODE *
+X509_policy_node_get0_parent(node)
+    X509_POLICY_NODE *node
+
+
+ASN1_OBJECT *	
+OBJ_dup(o)
+    ASN1_OBJECT *o
+
+ASN1_OBJECT *	
+OBJ_nid2obj(n)
+    int n
+
+const char *	
+OBJ_nid2ln(n)
+    int n
+
+const char *	
+OBJ_nid2sn(n)
+    int n
+
+int		
+OBJ_obj2nid(o)
+    ASN1_OBJECT *o
+
+ASN1_OBJECT *	
+OBJ_txt2obj(s, no_name)
+    const char *s
+    int no_name
+
+void
+OBJ_obj2txt(a, no_name)
+    ASN1_OBJECT *a
+    int no_name
+    PREINIT:
+	char buf[100];
+	int  len;
+    CODE:
+    len = OBJ_obj2txt(buf, sizeof(buf), a, no_name);
+    ST(0) = sv_newmortal();
+    sv_setpvn(ST(0), buf, len);
+
+int		
+OBJ_txt2nid(s)
+    const char *s
+
+int		
+OBJ_ln2nid(s)
+    const char *s
+
+int		
+OBJ_sn2nid(s)
+    const char *s
+
+int		
+OBJ_cmp(a, b)
+    ASN1_OBJECT *a
+    ASN1_OBJECT *b
 
 #define REM_EOF "/* EOF - SSLeay.xs */"

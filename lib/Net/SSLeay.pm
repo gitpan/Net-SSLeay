@@ -4,7 +4,7 @@
 # Copyright (C) 2005 Florian Ragwitz <rafl@debian.org>, All Rights Reserved.
 # Copyright (C) 2005 Mike McCauley <mikem@open.com.au>, All Rights Reserved.
 #
-# $Id$
+# $Id: SSLeay.pm 271 2011-04-29 22:40:28Z mikem-guest $
 #
 # Version 1.04, 31.3.1999
 # 30.7.1999, Tracking OpenSSL-0.9.3a changes, --Sampo
@@ -106,7 +106,7 @@ $Net::SSLeay::slowly = 0;
 $Net::SSLeay::random_device = '/dev/urandom';
 $Net::SSLeay::how_random = 512;
 
-$VERSION = '1.36';
+$VERSION = '1.37';
 @ISA = qw(Exporter);
 @EXPORT_OK = qw(
     AT_MD5_WITH_RSA_ENCRYPTION
@@ -1599,6 +1599,10 @@ in the standards. If a site refuses to respond or sends back some
 nonsensical error codes (at the SSL handshake level), try this option
 before mailing me.
 
+On some systems, OpenSSL may be compiled without support for SSLv2.
+If this is the case, Net::SSLeay will warn if ssl_version has been set
+to 2.
+
 The high level API returns the certificate of the peer, thus allowing
 one to check what certificate was supplied. However, you will only be
 able to check the certificate after the fact, i.e. you already sent
@@ -1618,7 +1622,8 @@ internally. This really should not be a problem because there is no
 way to interleave the high level API functions, unless you use threads
 (but threads are not very well supported in perl anyway (as of version
 5.6.1). However, you may run into problems if you call undocumented
-internal functions in an interleaved fashion.
+internal functions in an interleaved fashion. The best solution is to "require Net::SSLeay" 
+in one thread after all the threads have been created.
 
 =head1 DIAGNOSTICS
 
@@ -1772,7 +1777,7 @@ sub want_X509_lookup { want(shift) == 4 }
 sub open_tcp_connection {
     my ($dest_serv, $port) = @_;
     my ($errs);
-    
+
     $port = getservbyname($port, 'tcp') unless $port =~ /^\d+$/;
     my $dest_serv_ip = gethostbyname($dest_serv);
     unless (defined($dest_serv_ip)) {
@@ -2216,7 +2221,7 @@ sub dump_peer_certificate ($) {
 
 ### Arrange some randomness for eay PRNG
 
-sub randomize (;$$) {
+sub randomize (;$$$) {
     my ($rn_seed_file, $seed, $egd_path) = @_;
     my $rnsf = defined($rn_seed_file) && -r $rn_seed_file;
 
@@ -2238,7 +2243,13 @@ sub randomize (;$$) {
 }
 
 sub new_x_ctx {
-    if    ($ssl_version == 2)  { $ctx = CTX_v2_new(); }
+    if ($ssl_version == 2)  {
+	unless (exists &Net::SSLeay::CTX_v2_new) {
+	    warn "ssl_version has been set to 2, but this version of OpenSSL has been compiled without SSLv2 support";
+	    return undef;
+	}
+	$ctx = CTX_v2_new();
+    }
     elsif ($ssl_version == 3)  { $ctx = CTX_v3_new(); }
     elsif ($ssl_version == 10) { $ctx = CTX_tlsv1_new(); }
     else                       { $ctx = CTX_new(); }
@@ -2507,7 +2518,7 @@ sub set_cert_and_key ($$$) {
     my ($ctx, $cert_path, $key_path) = @_;    
     my $errs = '';
     # Following will ask password unless private key is not encrypted
-    CTX_use_RSAPrivateKey_file ($ctx, $key_path, &FILETYPE_PEM);
+    CTX_use_PrivateKey_file ($ctx, $key_path, &FILETYPE_PEM);
     $errs .= print_errs("private key `$key_path' ($!)");
     CTX_use_certificate_file ($ctx, $cert_path, &FILETYPE_PEM);
     $errs .= print_errs("certificate `$cert_path' ($!)");
@@ -2523,9 +2534,9 @@ sub set_server_cert_and_key ($$$) { &set_cert_and_key }
 sub set_proxy ($$;**) {
     ($proxyhost, $proxyport, $proxyuser, $proxypass) = @_;
     require MIME::Base64 if $proxyuser;
-    $proxyauth = $CRLF . 'Proxy-authorization: Basic '
-	. MIME::Base64::encode("$proxyuser:$proxypass", '')
-	    if $proxyuser;
+    $proxyauth = $proxyuser
+         ? $CRLF . 'Proxy-authorization: Basic '
+	 : '';
 }
 
 ###

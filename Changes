@@ -337,4 +337,22 @@ Revision history for Perl extension Net::SSLeay.
 	- Fixed a typo reported by Dan Dascalescu.
 	- added RIPEMD160 digest function.  Patch provided by dkg.
 
+1.37	2011-09-16
+	- Added X509_get_fingerprint, contributed by Thierry Walrant (with
+	minor changes die to the fact that stricmp is not avialable. Cert
+	types must be lowercase. Also added test to 07_sslecho.t
+	- Added suport for SSL_CTX_set1_param, SSL_set1_param,
+	selected X509_VERIFY_PARAM_* OBJ_* functions. Added new test
+	t/local/36_verify.t
+	- Fixed the prototype for randomize(), it missed one arg, and errors
+	are reported with perl 5.10.1 on Windows
+	- Fixed an uninitialized value warning in $Net::SSLeay::proxyauth,
+	reported by Andrey Rikov.
+	- Update so net-ssleay will compile if SSLV2 is not present. Patch
+	from Chris Butler.
+	- Fixed a problem where sslcat (and possibly other functions) expect RSA keys and will not
+	load DSA keys for client certificates. Reported and patched by "Jesse
+	DeFer via RT"
+        - Removed SSL_CTX_v2_new and SSLv2_method() for OpenSSL 1.0 and later.
+	- Added CTX_use_PKCS12_file contributed by "Andrew A. Budkin".
 #EOF
