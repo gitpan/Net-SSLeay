@@ -360,5 +360,7 @@ Revision history for Perl extension Net::SSLeay.
 	available in OpenSSL 0.9.8 such as X509_VERIFY_PARAM and
 	X509_POLICY_NODE, causing build failures with older versions of
 	OpenSSL. Patched by paul.
-	
+1.39	2011-09-21
+	Downgraded Module::OInstall to 0.93 since 1.01 was causing problems in
+	the Makefile. Reported by Albert Chin.
 #EOF
