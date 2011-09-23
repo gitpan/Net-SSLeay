@@ -361,6 +361,11 @@ Revision history for Perl extension Net::SSLeay.
 	X509_POLICY_NODE, causing build failures with older versions of
 	OpenSSL. Patched by paul.
 1.39	2011-09-21
-	Downgraded Module::OInstall to 0.93 since 1.01 was causing problems in
+	Downgraded Module::Install to 0.93 since 1.01 was causing problems in
 	the Makefile. Reported by Albert Chin.
+1.40	2011-09-23
+	Fixed incorrect argument type in call to SSL_set1_param
+	Fixed a number of issues with pointer sizes, patched by "Douglas
+	Christopher Wilson via RT". Removed redundant pointer cast tests from t/
+	Added Perl version requirements to SSLeay.pm
 #EOF

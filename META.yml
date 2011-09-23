@@ -21,4 +21,5 @@ no_index:
     - t
 requires:
   MIME::Base64: 0
-version: 1.39
+  perl: 5.005
+version: 1.40

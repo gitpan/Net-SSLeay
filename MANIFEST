@@ -55,7 +55,6 @@ t/external/15_altnames.t
 t/handle/external/10_destroy.t
 t/handle/external/50_external.t
 t/handle/local/05_use.t
-t/local/00_ptr_cast.t
 t/local/01_pod.t
 t/local/02_pod_coverage.t
 t/local/03_use.t
@@ -71,6 +70,5 @@ t/local/31_rsa_generate_key.t
 t/local/35_ephemeral.t
 t/local/50_digest.t
 t/local/kwalitee.t
-t/local/ptr_cast_test.c
 TODO
 typemap
