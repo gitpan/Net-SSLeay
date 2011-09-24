@@ -22,4 +22,4 @@ no_index:
 requires:
   MIME::Base64: 0
   perl: 5.005
-version: 1.40
+version: 1.41

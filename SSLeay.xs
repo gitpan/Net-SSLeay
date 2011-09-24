@@ -8,7 +8,7 @@
  *
  * Change data removed. See Changes
  *
- * $Id: SSLeay.xs 276 2011-09-23 02:40:02Z mikem-guest $
+ * $Id: SSLeay.xs 278 2011-09-24 22:09:06Z mikem-guest $
  * 
  * The distribution and use of this module are subject to the conditions
  * listed in LICENSE file at the root of OpenSSL-0.9.6b
@@ -1861,24 +1861,35 @@ RIPEMD160(data)
 #ifndef OPENSSL_NO_SSL2 
 #if OPENSSL_VERSION_NUMBER < 0x10000000L
 
-SSL_METHOD *
+const SSL_METHOD *
 SSLv2_method()
 
 #endif
 #endif
 
-SSL_METHOD *
+const SSL_METHOD *
 SSLv3_method()
 
-SSL_METHOD *
+const SSL_METHOD *
 TLSv1_method()
+
+#if OPENSSL_VERSION_NUMBER < 0x10000000L
 
 int
 SSL_set_ssl_method(ssl, method)
-     SSL *          ssl
-     SSL_METHOD *   method
+     SSL *         ssl
+     SSL_METHOD *  method
 
-SSL_METHOD *
+#else
+
+int
+SSL_set_ssl_method(ssl, method)
+     SSL *               ssl
+     const SSL_METHOD *  method
+
+#endif
+
+const SSL_METHOD *
 SSL_get_ssl_method(ssl)
      SSL *          ssl
 
@@ -1988,15 +1999,27 @@ int
 SSL_check_private_key(ctx)
      SSL *	ctx
 
+#if OPENSSL_VERSION_NUMBER < 0x009080bfL
+
 char *
 SSL_CIPHER_description(cipher,buf,size)
-     SSL_CIPHER *  cipher
+     SSL_CIPHER *	cipher
      char *	buf
      int 	size
 
+#else
+
+char *
+SSL_CIPHER_description(cipher,buf,size)
+     const SSL_CIPHER *  cipher
+     char *	buf
+     int 	size
+
+#endif
+
 int	
 SSL_CIPHER_get_bits(c,alg_bits)
-     SSL_CIPHER *	c
+     const SSL_CIPHER *	c
      int *	alg_bits
 
 int 
@@ -2118,10 +2141,21 @@ SSL_CTX_set_quiet_shutdown(ctx,mode)
      SSL_CTX *	ctx
      int 	mode
 
-int 
+#if OPENSSL_VERSION_NUMBER < 0x10000000L
+
+int
 SSL_CTX_set_ssl_version(ctx,meth)
      SSL_CTX *	ctx
      SSL_METHOD *	meth
+
+#else
+
+int 
+SSL_CTX_set_ssl_version(ctx,meth)
+     SSL_CTX *	ctx
+     const SSL_METHOD *	meth
+
+#endif
 
 long 
 SSL_CTX_set_timeout(ctx,t)
@@ -2166,7 +2200,7 @@ SSL *
 SSL_dup(ssl)
      SSL *	ssl
 
-SSL_CIPHER *
+const SSL_CIPHER *
 SSL_get_current_cipher(s)
      SSL *	s
 
@@ -2889,7 +2923,7 @@ int
 X509_VERIFY_PARAM_add0_table(param)
     X509_VERIFY_PARAM *param
 
-X509_VERIFY_PARAM *
+const X509_VERIFY_PARAM *
 X509_VERIFY_PARAM_lookup(name)
     const char *name
 
@@ -2926,17 +2960,17 @@ X509_policy_level_get0_node(level, i)
     X509_POLICY_LEVEL *level
     int i
 
-ASN1_OBJECT *
+const ASN1_OBJECT *
 X509_policy_node_get0_policy(node)
-    X509_POLICY_NODE *node
+    const X509_POLICY_NODE *node
 
 STACK_OF(POLICYQUALINFO) *
 X509_policy_node_get0_qualifiers(node)
     X509_POLICY_NODE *node
 
-X509_POLICY_NODE *
+const X509_POLICY_NODE *
 X509_policy_node_get0_parent(node)
-    X509_POLICY_NODE *node
+    const X509_POLICY_NODE *node
 
 #endif
 
