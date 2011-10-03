@@ -8,7 +8,7 @@
  *
  * Change data removed. See Changes
  *
- * $Id: SSLeay.xs 278 2011-09-24 22:09:06Z mikem-guest $
+ * $Id: SSLeay.xs 281 2011-10-03 06:24:48Z mikem-guest $
  * 
  * The distribution and use of this module are subject to the conditions
  * listed in LICENSE file at the root of OpenSSL-0.9.6b
@@ -1760,10 +1760,11 @@ CTX_use_PKCS12_file(ctx, file, password)
     EVP_PKEY* private_key;
     X509* certificate;
     SSL_CTX *          ctx1;
+    FILE *fp;
     CODE:
     RETVAL = 1;
 
-    FILE *fp = fopen (file, "r");   
+    fp = fopen (file, "r");   
     bio = BIO_new(BIO_s_mem());
     while(count = fread(buffer, 1, sizeof(buffer), fp))
 	BIO_write(bio, buffer, count);

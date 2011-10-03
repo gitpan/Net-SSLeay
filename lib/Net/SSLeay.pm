@@ -4,7 +4,7 @@
 # Copyright (C) 2005 Florian Ragwitz <rafl@debian.org>, All Rights Reserved.
 # Copyright (C) 2005 Mike McCauley <mikem@open.com.au>, All Rights Reserved.
 #
-# $Id: SSLeay.pm 278 2011-09-24 22:09:06Z mikem-guest $
+# $Id: SSLeay.pm 281 2011-10-03 06:24:48Z mikem-guest $
 #
 # Change data removed from here. See Changes
 # The distribution and use of this module are subject to the conditions
@@ -61,7 +61,7 @@ $Net::SSLeay::slowly = 0;
 $Net::SSLeay::random_device = '/dev/urandom';
 $Net::SSLeay::how_random = 512;
 
-$VERSION = '1.41';
+$VERSION = '1.42';
 @ISA = qw(Exporter);
 @EXPORT_OK = qw(
     AT_MD5_WITH_RSA_ENCRYPTION
@@ -919,7 +919,7 @@ previously signed, but which it now revokes. CRLs are in PEM format.
 
 You can enable C<Net::SSLeay CRL> checking like this:
 
-	    &Net::SSLeay::X509_STORE_CTX_set_flags
+	    &Net::SSLeay::X509_STORE_set_flags
 		(&Net::SSLeay::CTX_get_cert_store($ssl), 
 		 &Net::SSLeay::X509_V_FLAG_CRL_CHECK); 
 
