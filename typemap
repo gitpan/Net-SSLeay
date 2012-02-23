@@ -15,12 +15,15 @@ BIO *           T_PTR
 BIO_METHOD *    T_PTR
 EVP_PKEY *      T_PTR
 const EVP_MD *  T_PTR
+EVP_MD *        T_PTR
+EVP_MD_CTX *    T_PTR
+const EVP_MD_CTX *      T_PTR
 CERT *          T_PTR
 LHASH *         T_PTR
 struct lhash_st_SSL_SESSION *	T_PTR
 struct cert_st * T_PTR
 X509_STORE_CTX * T_PTR
-ASN1_UTCTIME *   T_PTR
+ASN1_TIME *      T_PTR
 ASN1_OCTET_STRING *   T_PTR
 EVP_PKEY *       T_PTR
 const char *	 T_PV
