@@ -22,4 +22,5 @@ no_index:
 requires:
   MIME::Base64: 0
   perl: 5.005
+  Test::More: 0.60_01
 version: 1.42
