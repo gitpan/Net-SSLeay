@@ -51,6 +51,7 @@ t/data/0f89dbb5.0
 t/data/cert.pem
 t/data/key.pem
 t/data/key.pem.e
+t/data/binary-test.file
 t/external/08_external.t
 t/external/15_altnames.t
 t/handle/external/10_destroy.t
