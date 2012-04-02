@@ -1,0 +1,12 @@
+<REPOSITORYSUMMARY>
+<SOFTPKG NAME="Net-SSLeay" VERSION="1,35,0,2">
+    <TITLE>Net-SSLeay</TITLE>
+    <ABSTRACT>Perl extension for using OpenSSL. Includes OpenSSL DLLs from
+    0.9.8e plus EAP-FAST extensions from Jouni Malinen</ABSTRACT>, and Net-SSLeay SVN
+    as of 2009-05-16.
+    <AUTHOR>Net-SSLeay Maintained by Mike McCauley and Florian Ragwitz since November 2005, OpenSSL group</AUTHOR>
+    
+    
+    
+</SOFTPKG>
+</REPOSITORYSUMMARY>

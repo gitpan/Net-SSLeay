@@ -2,7 +2,7 @@
 
 use strict;
 use warnings;
-use Test::More tests => 71;
+use Test::More tests => 78;
 use Socket;
 use File::Spec;
 use Symbol qw(gensym);
@@ -19,8 +19,9 @@ my $msg = 'ssleay-test';
 my $cert_pem = File::Spec->catfile('t', 'data', 'cert.pem');
 my $key_pem = File::Spec->catfile('t', 'data', 'key.pem');
 
-my $cert_name = '/C=PL/ST=Peoples Republic of Perl/L=Net::/O=Net::SSLeay/'
-    . 'OU=Net::SSLeay developers/CN=127.0.0.1/emailAddress=rafl@debian.org';
+my $cert_name = (Net::SSLeay::SSLeay >= 0x0090700f) ?
+                '/C=PL/ST=Peoples Republic of Perl/L=Net::/O=Net::SSLeay/OU=Net::SSLeay developers/CN=127.0.0.1/emailAddress=rafl@debian.org' :
+                '/C=PL/ST=Peoples Republic of Perl/L=Net::/O=Net::SSLeay/OU=Net::SSLeay developers/CN=127.0.0.1/Email=rafl@debian.org';
 
 $ENV{RND_SEED} = '1234567890123456789012345678901234567890';
 
@@ -61,6 +62,7 @@ Net::SSLeay::library_init();
             ok(Net::SSLeay::accept($ssl), 'accept');
 
             ok(Net::SSLeay::get_cipher($ssl), 'get_cipher');
+            like(Net::SSLeay::get_shared_ciphers($ssl), qr/(AES|RSA|SHA|CBC|DES)/, 'get_shared_ciphers');
 
             my $got = Net::SSLeay::ssl_read_all($ssl);
             is($got, $msg, 'ssl_read_all') if $_ < 7;
@@ -331,7 +333,7 @@ waitpid $pid, 0;
 push @results, [ $? == 0, 'server exited wiht 0' ];
 
 END {
-    Test::More->builder->current_test(44);
+    Test::More->builder->current_test(51);
     for my $t (@results) {
         ok( $t->[0], $t->[1] );
     }

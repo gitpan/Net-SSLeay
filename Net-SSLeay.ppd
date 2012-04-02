@@ -1,0 +1,42 @@
+<SOFTPKG NAME="Net-SSLeay" VERSION="1,36,0,1">
+    <TITLE>Net-SSLeay</TITLE>
+    <ABSTRACT>Perl extension for using OpenSSL. Includes OpenSSL DLLs from
+    0.9.8e plus EAP-FAST extensions from Jouni Malinen</ABSTRACT>, and Net-SSLeay SVN
+    as of 2009-05-16.
+    <AUTHOR>Net-SSLeay Maintained by Mike McCauley and Florian Ragwitz since November 2005, OpenSSL group</AUTHOR>
+    <IMPLEMENTATION>
+        <OS NAME="MSWin32" />
+        <ARCHITECTURE NAME="MSWin32-x86-multi-thread-5.8" />
+        <CODEBASE HREF="MSWin32-x86-multi-thread-5.8/Net-SSLeay.tar.gz" />
+    </IMPLEMENTATION>
+    <IMPLEMENTATION>
+        <OS NAME="MSWin32" />
+        <ARCHITECTURE NAME="MSWin32-x86-multi-thread-5.10" />
+        <CODEBASE HREF="MSWin32-x86-multi-thread-5.10/Net-SSLeay.tar.gz" />
+    </IMPLEMENTATION>
+    <IMPLEMENTATION>
+        <OS NAME="MSWin32" />
+        <ARCHITECTURE NAME="MSWin32-x86-multi-thread-5.12" />
+        <CODEBASE HREF="MSWin32-x86-multi-thread-5.12/Net-SSLeay.tar.gz" />
+    </IMPLEMENTATION>
+    <IMPLEMENTATION>
+        <OS NAME="MSWin32" />
+        <ARCHITECTURE NAME="MSWin32-x86-multi-thread" />
+        <CODEBASE HREF="MSWin32-x86-multi-thread/Net-SSLeay.tar.gz" />
+    </IMPLEMENTATION>
+    <IMPLEMENTATION>
+        <OS NAME="MSWin32" />
+        <ARCHITECTURE NAME="MSWin32-x64-multi-thread-5.8" />
+        <CODEBASE HREF="MSWin32-x64-multi-thread-5.8/Net-SSLeay.tar.gz" />
+    </IMPLEMENTATION>
+    <IMPLEMENTATION>
+        <OS NAME="MSWin32" />
+        <ARCHITECTURE NAME="MSWin32-x64-multi-thread-5.10" />
+        <CODEBASE HREF="MSWin32-x64-multi-thread-5.10/Net-SSLeay.tar.gz" />
+    </IMPLEMENTATION>
+    <IMPLEMENTATION>
+        <OS NAME="MSWin32" />
+        <ARCHITECTURE NAME="MSWin32-x64-multi-thread-5.12" />
+        <CODEBASE HREF="MSWin32-x64-multi-thread-5.12/Net-SSLeay.tar.gz" />
+    </IMPLEMENTATION>
+</SOFTPKG>

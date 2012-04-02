@@ -8,11 +8,118 @@
  *
  * Change data removed. See Changes
  *
- * $Id: SSLeay.xs 302 2012-02-15 21:57:08Z mikem-guest $
+ * $Id: SSLeay.xs 334 2012-04-02 08:38:39Z mikem-guest $
  * 
  * The distribution and use of this module are subject to the conditions
  * listed in LICENSE file at the root of OpenSSL-0.9.6b
  * distribution (i.e. free, but mandatory attribution and NO WARRANTY).
+ */
+
+/* ####
+ * #### PLEASE READ THE FOLLOWING RULES BEFORE YOU START EDITING THIS FILE! ####
+ * ####
+ *
+ * Function naming conventions:
+ *
+ * 1/ never change the aready existing function names (all calling convention) in a way
+ *    that may cause backward incompatibility (e.g. add ALIAS with old name if necessary)
+ *
+ * 2/ it is recommended to keep the original openssl function names for functions that are:
+ *
+ *    1:1 wrappers to the original openssl functions
+ *    see for example: X509_get_issuer_name(cert) >> Net::SSLeay::X509_get_issuer_name($cert)
+ *
+ *    nearly 1:1 wrappers implementing only necessary "glue" e.g. buffer handling
+ *    see for example: RAND_seed(buf,len) >> Net::SSLeay::RAND_seed($buf)
+ *
+ * 3/ OpenSSL functions starting with "SSL_" are added into SSLeay.xs with "SLL_" prefix
+ *    (e.g. SSL_CTX_new) but keep in mind that they will be available in Net::SSLeay without
+ *    "SSL_" prefix (e.g. Net::SSLeay::CTX_new) - keep this for all new functions
+ *
+ * 4/ The names of functions which do not fit rule 2/ (which means they implement some non
+ *    trivial code around original openssl function or do more complex tasks) should be
+ *    prefixed with "P_" - see for example: P_ASN1_TIME_set_isotime
+ *
+ * 5/ Exceptions from rules above:
+ *    functions that are part or wider set of already existing function not following this rule
+ *    for example: there already exists: PEM_get_string_X509_CRL + PEM_get_string_X509_REQ and you want
+ *    to add PEM_get_string_SOMETHING - then no need to follow 3/ (do not prefix with "P_")
+ *
+ * Support for different openssl versions, different platforms, different compilers:
+ *
+ * 1/ SSleay.xs is expected to build/pass test suite
+ *    - with openssl 0.9.6 and newer versions
+ *    - with perl 5.8 and newer versions
+ *
+ * 2/ Fix all compiler warnings - we expect 100% clean build
+ *
+ * 3/ If you are gonna add a function which is available since certain openssl version
+ *    use proper #ifdefs to assure that SSLeay.xs will compile also with older versions
+ *    which are missing this function
+ *
+ * 4/ Even warnings arising from different use of "const" in different openssl versions
+ *    needs to be hanled with #ifdefs - see for example: X509_NAME_add_entry_by_txt
+ *
+ * 5/ avoid using global C variables (it is very likely gonna break thread-safetyness)
+ *    use rather global MY_CXT structure
+ *
+ * 6/ avoid using any UNIX/POSIX specific functions, keep in mind that SSLeay.xs must
+ *    complile also on non-UNIX platforms like MS Windows and others
+ *
+ * 7/ avoid using c++ comments "//" (or other c++ features accepted by some c compiler)
+ *    even if your compiler can handle them without warnings
+ *
+ * Passing test suite:
+ *
+ * 1/ any changes to SSLeay.xs must not introduce a failure of existing test suite
+ *
+ * 2/ it is strongly recommended to create test(s) for newly added function(s), especially
+ *    when the new function is not only a 1:1 wrapper but contains a complex code
+ *
+ * 3/ it is mandatory to add a dcumentation for all newly added functions into SSLeay.pod
+ *    otherwise t/local/02_pod_coverage.t is gonna fail (and you will be asked to add
+ *    some doc into your patch)
+ *
+ * Prefered code layout:
+ *
+ * 1/ for simple 1:1 XS wrappers use:
+ *
+ *    a/ functions whith short "signarute" (short list of args):
+ *
+ *    long
+ *    SSL_set_tmp_dh(SSL *ssl,DH *dh)
+ *
+ *    b/ functions whith long "signarute" (long list of args):
+ *       simply when approach a/ does not fit to 120 columns
+ *
+ *    void
+ *    SSL_any_functions(library_flag,function_name,reason,file_name,line)
+ *            int library_flag
+ *            int function_name
+ *            int reason
+ *            char *file_name
+ *            int line
+ *
+ * 2/ for XS functions with full implementation use identation like this:
+ *
+ *    int
+ *    RAND_bytes(buf, num)
+ *            SV *buf
+ *            int num
+ *        PREINIT:
+ *            int rc;
+ *            unsigned char *random;
+ *        CODE:
+ *            / * some code here * /
+ *            RETVAL = rc;
+ *        OUTPUT:
+ *            RETVAL
+ *
+ * THE LAST RULE:
+ *
+ * The fact that some parts of SSLeay.xs do not follow the rules above is not 
+ * a reason why any new code can also break these rules in the same way
+ *
  */
 
 /* Prevent warnings about strncpy from Windows compilers */
@@ -64,16 +171,23 @@ which conflicts with perls
 #endif
 #undef BLOCK
 
-/* Debugging output */
+/* Debugging output - to enable use:
+ *
+ * perl Makefile.PL DEFINE=-DSHOW_XS_DEBUG
+ * make
+ *
+ */
 
-#if 0
-#define PR(s) printf(s);
-#define PRN(s,n) printf("'%s' (%d)\n",s,n);
-#define SEX_DEBUG 1
+#ifdef SHOW_XS_DEBUG
+#define PR1(s) fprintf(stderr,s);
+#define PR2(s,t) fprintf(stderr,s,t);
+#define PR3(s,t,u) fprintf(stderr,s,t,u);
+#define PR4(s,t,u,v) fprintf(stderr,s,t,u,v);
 #else
-#define PR(s)
-#define PRN(s,n)
-#undef  SEX_DEBUG
+#define PR1(s)
+#define PR2(s,t)
+#define PR3(s,t,u)
+#define PR4(s,t,u,v)
 #endif
 
 #include "constants.c"
@@ -83,13 +197,10 @@ which conflicts with perls
 #define MY_CXT_KEY "Net::SSLeay::_guts" XS_VERSION
 
 typedef struct {
-    HV* ssleay_ctx_verify_callbacks;
-    HV* ssleay_ctx_passwd_cbs;
-    HV* ssleay_ctx_cert_verify_cbs;
-    HV* ssleay_session_secret_cbs;
+    HV* global_cb_data;
     UV tid;
 } my_cxt_t;
-START_MY_CXT; 
+START_MY_CXT;
 
 #ifdef USE_ITHREADS
 static perl_mutex LIB_init_mutex;
@@ -97,17 +208,13 @@ static perl_mutex *GLOBAL_openssl_mutex = NULL;
 #endif
 static int LIB_initialized;
 
-#ifdef WIN32
-/* see comment in openssl_threads_cleanup() */
-DWORD GLOBAL_openssl_mutex_creator;
-#endif
-
 UV get_my_thread_id(void) /* returns threads->tid() value */
 {
     dSP;
     UV tid;
-    int count;
+    int count = 0;
 
+#ifdef USE_ITHREADS
     ENTER;
     SAVETMPS;
     PUSHMARK(SP);
@@ -123,17 +230,19 @@ UV get_my_thread_id(void) /* returns threads->tid() value */
     PUTBACK;
     FREETMPS;
     LEAVE;
-    
+#endif
+
     return tid;
 }
 
 /* IMPORTANT NOTE:
  * openssl locking was implemented according to http://www.openssl.org/docs/crypto/threads.html
  * we implement both static and dynamic locking as described on URL above
- * we do not support locking on pre-0.9.4 as CRYPTO_num_locks() was added in OpenSSL 0.9.4 
- * we not support dynamic locking on pre-0.9.6 as necessary functions were added in OpenSSL 0.9.5b-dev
+ * locking is supported when OPENSSL_THREADS macro is defined which means openssl-0.9.7 or newer
+ * we intentionally do not implement cleanup of openssl's threading as it causes troubles
+ * with apache-mpm-worker+mod_perl+mod_ssl+net-ssleay
  */
-#if defined(USE_ITHREADS) && defined(OPENSSL_THREADS) && OPENSSL_VERSION_NUMBER >= 0x00904000L
+#if defined(USE_ITHREADS) && defined(OPENSSL_THREADS)
 
 static void openssl_locking_function(int mode, int type, const char *file, int line)
 {
@@ -143,11 +252,11 @@ static void openssl_locking_function(int mode, int type, const char *file, int l
     else
       MUTEX_UNLOCK(&GLOBAL_openssl_mutex[type]);
 }
- 
+
 #if OPENSSL_VERSION_NUMBER < 0x10000000L
 static unsigned long openssl_threadid_func(void)
 {
-    dMY_CXT;        
+    dMY_CXT;
     return (unsigned long)(MY_CXT.tid);
 }
 #else
@@ -157,9 +266,6 @@ void openssl_threadid_func(CRYPTO_THREADID *id)
     CRYPTO_THREADID_set_numeric(id, (unsigned long)(MY_CXT.tid));
 }
 #endif
-
-#if OPENSSL_VERSION_NUMBER >= 0x00906000L
-/* dynamic locking related functions required by openssl library (0.9.6+) */
 
 struct CRYPTO_dynlock_value
 {
@@ -191,73 +297,45 @@ void openssl_dynlocking_destroy_function (struct CRYPTO_dynlock_value *l, const 
     Safefree(l);
 }
 
-#endif
-
 void openssl_threads_init(void)
 {
     int i;
- 
+
+    PR1("STARTED: openssl_threads_init\n");
+
     /* initialize static locking */
-    New(0, GLOBAL_openssl_mutex, CRYPTO_num_locks(), perl_mutex);	
-    if (!GLOBAL_openssl_mutex) return;    
-    for (i=0; i<CRYPTO_num_locks(); i++) MUTEX_INIT(&GLOBAL_openssl_mutex[i]);
-    CRYPTO_set_locking_callback((void (*)(int,int,const char *,int))openssl_locking_function);
-#ifdef WIN32    
-    GLOBAL_openssl_mutex_creator = GetCurrentThreadId();     
+    if ( !CRYPTO_get_locking_callback() ) {
+#if OPENSSL_VERSION_NUMBER < 0x10000000L
+        if ( !CRYPTO_get_id_callback() ) {
+#else
+        if ( !CRYPTO_THREADID_get_callback() ) {
 #endif
+            PR1("openssl_threads_init static locking\n");
+            New(0, GLOBAL_openssl_mutex, CRYPTO_num_locks(), perl_mutex);
+            if (!GLOBAL_openssl_mutex) return;
+            for (i=0; i<CRYPTO_num_locks(); i++) MUTEX_INIT(&GLOBAL_openssl_mutex[i]);
+            CRYPTO_set_locking_callback((void (*)(int,int,const char *,int))openssl_locking_function);
 
 #ifndef WIN32
-    /* no need for threadid_func() on Win32 */
+            /* no need for threadid_func() on Win32 */
 #if OPENSSL_VERSION_NUMBER < 0x10000000L
-    CRYPTO_set_id_callback(openssl_threadid_func);
-#else    
-    CRYPTO_THREADID_set_callback(openssl_threadid_func);
+            CRYPTO_set_id_callback(openssl_threadid_func);
+#else
+            CRYPTO_THREADID_set_callback(openssl_threadid_func);
 #endif
 #endif
+        }
+    }
 
-#if OPENSSL_VERSION_NUMBER >= 0x00906000L
-    /* initialize dynamic locking (0.9.6+) */
-    CRYPTO_set_dynlock_create_callback(openssl_dynlocking_create_function);
-    CRYPTO_set_dynlock_lock_callback(openssl_dynlocking_lock_function);
-    CRYPTO_set_dynlock_destroy_callback(openssl_dynlocking_destroy_function);
-#endif   
-}
-
-void openssl_threads_cleanup(void)
-{
-    int i;
-    
-    if (!GLOBAL_openssl_mutex) return;
-
-#if OPENSSL_VERSION_NUMBER >= 0x00906000L
-    /* shutdown dynamic locking (0.9.6+) */
-    CRYPTO_set_dynlock_create_callback(NULL);
-    CRYPTO_set_dynlock_lock_callback(NULL);
-    CRYPTO_set_dynlock_destroy_callback(NULL);
-#endif
-
-    /* shutdown static locking */
-#ifdef WIN32
-    /* BEWARE: Win32 workaround!
-     * in fork() emulation on Win32 which is implemented via threads the 
-     * function END() is called multiple times, thus we have to avoid
-     * multiple destruction by allowing the destruction only by thread
-     * that has allocated GLOBAL_openssl_mutex
-     */
-    if (GLOBAL_openssl_mutex_creator != GetCurrentThreadId()) return;
-#endif
-
-    CRYPTO_set_locking_callback(NULL);
-#ifndef WIN32
-    /* only relevat to non-Windows platforms */
-#if OPENSSL_VERSION_NUMBER < 0x10000000L
-    CRYPTO_set_id_callback(NULL);
-#else    
-    CRYPTO_THREADID_set_callback(NULL);
-#endif
-#endif    
-    for (i=0; i<CRYPTO_num_locks(); i++) MUTEX_DESTROY(&GLOBAL_openssl_mutex[i]);
-    Safefree(GLOBAL_openssl_mutex);
+    /* initialize dynamic locking */
+    if ( !CRYPTO_get_dynlock_create_callback() &&
+         !CRYPTO_get_dynlock_lock_callback() &&
+         !CRYPTO_get_dynlock_destroy_callback() ) {
+        PR1("openssl_threads_init dynamic locking\n");
+        CRYPTO_set_dynlock_create_callback(openssl_dynlocking_create_function);
+        CRYPTO_set_dynlock_lock_callback(openssl_dynlocking_lock_function);
+        CRYPTO_set_dynlock_destroy_callback(openssl_dynlocking_destroy_function);
+    }
 }
 
 #endif
@@ -277,664 +355,661 @@ typedef int perl_filehandle_t;
 
 #if OPENSSL_VERSION_NUMBER >= 0x1000000fL
 static void handler_list_md_fn(const EVP_MD *m, const char *from, const char *to, void *arg)
-{  
+{
   /* taken from apps/dgst.c */
-  const char *mname;  
+  const char *mname;
   if (!m) return;                                           /* Skip aliases */
   mname = OBJ_nid2ln(EVP_MD_type(m));
-  if (strcmp(from, mname)) return;                          /* Skip shortnames */       
+  if (strcmp(from, mname)) return;                          /* Skip shortnames */
   if (EVP_MD_flags(m) & EVP_MD_FLAG_PKEY_DIGEST) return;    /* Skip clones */
   if (strchr(mname, ' ')) mname= EVP_MD_name(m);
   av_push(arg, newSVpv(mname,0));
 }
 #endif
 
-/* ============= callback stuff ============== */
+/* ============= callbacks - basic info =============
+ *
+ * PLEASE READ THIS BEFORE YOU ADD ANY NEW CALLBACK!!
+ *
+ * There are basically 2 types of callbacks used in SSLeay:
+ *
+ * 1/ "one-time" callbacks - these are created+used+destroyed within one perl function implemented in XS
+ *    these callbacks use a cpecial C structupe simple_cb_data_t to pass necessary data
+ *    there are 2 related helper functions: simple_cb_data_new() + simple_cb_data_free
+ *    for example see implementation of these functions:
+ *    - RSA_generate_key
+ *    - PEM_read_bio_PrivateKey
+ *
+ * 2/ "advanced" callbacks - these are setup/destroyed by one function but used by another function; these
+ *    callbacks use global hash MY_CXT.global_cb_data to store perl functions + data to be uset at callback time
+ *    there are 2 related helper functions: cb_data_advanced_put() + cb_data_advanced_get for manipulating
+ *    global hash MY_CXT.global_cb_data which work like this:
+ *        cb_data_advanced_put(<pointer>, "data_name", dataSV)
+ *        >>>
+ *        global_cb_data->{"ptr_<pointer>"}->{"data_name"} = dataSV)
+ *    or
+ *        data = cb_data_advanced_get(<pointer>, "data_name")
+ *        >>>
+ *        my $data = global_cb_data->{"ptr_<pointer>"}->{"data_name"}
+ *    for example see implementation of these functions:
+ *    - SSL_CTX_set_verify
+ *    - SSL_set_verify
+ *    - SSL_CTX_set_cert_verify_callback
+ *    - SSL_CTX_set_default_passwd_cb
+ *    - SSL_CTX_set_default_passwd_cb_userdata
+ *    - SSL_set_session_secret_cb
+ *
+ * If wanna add a new callback:
+ * - you vely likely need a new function "your_callback_name_invoke()"
+ * - decide whether your case fits case 1/ or 2/ (and implement likewise existing functions)
+ * - try to avoid adding a new style of callback implementation (or ask Net::SSLeay maintainers before)
+ *
+ */
 
-static int
-ssleay_verify_callback_invoke (int ok, X509_STORE_CTX* x509_store) {
-	SSL* ssl;
-	SV* key;
-	char* key_str;
-	STRLEN key_len;
-	SV** callback;
-	int count, res;
-	dSP;
-        dMY_CXT;
-
-	ssl = X509_STORE_CTX_get_ex_data( x509_store, SSL_get_ex_data_X509_STORE_CTX_idx() );
-	key = sv_2mortal(newSViv( PTR2IV(ssl) ));
-	key_str = SvPV(key, key_len);
-
-	callback = hv_fetch( MY_CXT.ssleay_ctx_verify_callbacks, key_str, key_len, 0 );
-
-	if (callback == NULL) {
-		SSL_CTX* ssl_ctx = SSL_get_SSL_CTX(ssl);
-		key = sv_2mortal(newSViv( PTR2IV(ssl_ctx) ));
-		key_str = SvPV(key, key_len);
-
-		callback = hv_fetch( MY_CXT.ssleay_ctx_verify_callbacks, key_str, key_len, 0 );
-
-		if (callback == NULL) {
-			croak ("Net::SSLeay: verify_callback called, but not "
-				"set to point to any perl function.\n");
-		}
-	}
-
-
-	ENTER;
-	SAVETMPS;
-
-	PRN("verify callback glue", ok);
-
-	PUSHMARK(sp);
-	EXTEND( sp, 2 );
-	PUSHs( sv_2mortal(newSViv(ok)) );
-	PUSHs( sv_2mortal(newSViv(PTR2IV(x509_store))) );
-	PUTBACK;
-
-	PR("About to call verify callback.\n");
-	count = call_sv(*callback, G_SCALAR);
-	PR("Returned from verify callback.\n");
-
-	SPAGAIN;
-
-	if (count != 1) {
-		croak ( "Net::SSLeay: verify_callback "
-			"perl function did not return a scalar.\n");
-	}
-
-	res = POPi;
-
-	PUTBACK;
-	FREETMPS;
-	LEAVE;
-
-	return res;
-}
+/* ============= callback stuff - generic functions============== */
 
 struct _ssleay_cb_t {
-	SV* func;
-	SV* data;
-	UV tid;
+    SV* func;
+    SV* data;
 };
-typedef struct _ssleay_cb_t ssleay_ctx_passwd_cb_t;
-typedef struct _ssleay_cb_t ssleay_ctx_cert_verify_cb_t;
-typedef struct _ssleay_cb_t ssleay_session_secret_cb_t;
-typedef struct _ssleay_cb_t ssleay_RSA_generate_key_cb_t;
+typedef struct _ssleay_cb_t simple_cb_data_t;
 
-ssleay_ctx_passwd_cb_t*
-ssleay_ctx_passwd_cb_new(SSL_CTX* ctx) {
-	ssleay_ctx_passwd_cb_t* cb;
-	SV* hash_value;
-	SV* key;
-	char* key_str;
-	STRLEN key_len;
-        dMY_CXT;
-
-	New(0, cb, 1, ssleay_ctx_passwd_cb_t);
-	cb->func = NULL;
-	cb->data = NULL;
-	cb->tid = MY_CXT.tid;
-
-	if (ctx == NULL)
-		croak( "Net::SSLeay: ctx == NULL in ssleay_ctx_passwd_cb_new" );
-
-	hash_value = sv_2mortal(newSViv( PTR2IV(cb) ));
-
-	key = sv_2mortal(newSViv( PTR2IV(ctx) ));
-	key_str = SvPV(key, key_len);
-
-	if (MY_CXT.ssleay_ctx_passwd_cbs == (HV*)NULL)
-		MY_CXT.ssleay_ctx_passwd_cbs = newHV();
-
-	SvREFCNT_inc(hash_value);
-	hv_store( MY_CXT.ssleay_ctx_passwd_cbs, key_str, key_len, hash_value, 0 );
-
-	return cb;
+simple_cb_data_t* simple_cb_data_new(SV* func, SV* data)
+{
+    simple_cb_data_t* cb;
+    New(0, cb, 1, simple_cb_data_t);
+    if (cb) {
+        SvREFCNT_inc(func);
+        SvREFCNT_inc(data);
+        cb->func = func;
+        cb->data = data;
+    }
+    return cb;
 }
 
-ssleay_ctx_passwd_cb_t*
-ssleay_ctx_passwd_cb_get(SSL_CTX* ctx) {
-	SV* key;
-	char* key_str;
-	STRLEN key_len;
-	SV** hash_value;
-	ssleay_ctx_passwd_cb_t* cb;
-        dMY_CXT;
-
-	key = sv_2mortal(newSViv( PTR2IV(ctx) ));
-	key_str = SvPV(key, key_len);
-
-	hash_value = hv_fetch( MY_CXT.ssleay_ctx_passwd_cbs, key_str, key_len, 0 );
-
-	if (hash_value == NULL || *hash_value == NULL) {
-		cb = ssleay_ctx_passwd_cb_new(ctx);
-	} else {
-		cb = INT2PTR(ssleay_ctx_passwd_cb_t*, SvIV( *hash_value ));
-	}
-
-	return cb;
+void simple_cb_data_free(simple_cb_data_t* cb)
+{
+    if (cb) {
+        if (cb->func) {
+            SvREFCNT_dec(cb->func);
+            cb->func = NULL;
+        }
+        if (cb->data) {
+            SvREFCNT_dec(cb->data);
+            cb->data = NULL;
+        }
+    }
+    Safefree(cb);
 }
 
-void
-ssleay_ctx_passwd_cb_func_set(SSL_CTX* ctx, SV* func) {
-	ssleay_ctx_passwd_cb_t* cb;
+int cb_data_advanced_put(void *ptr, const char* data_name, SV* data)
+{
+    HV * L2HV;
+    SV ** svtmp;
+    int len;
+    char key_name[500];
+    dMY_CXT;
 
-	cb = ssleay_ctx_passwd_cb_get(ctx);
+    len = snprintf(key_name, sizeof(key_name), "ptr_%p", ptr);
+    if (len == sizeof(key_name)) return 0; /* error  - key_name too short*/
 
-	if (cb->func)
-		SvREFCNT_dec(cb->func);
+    /* get or create level-2 hash */
+    svtmp = hv_fetch(MY_CXT.global_cb_data, key_name, strlen(key_name), 0);
+    if (svtmp == NULL) {
+        L2HV = newHV();
+        hv_store(MY_CXT.global_cb_data, key_name, strlen(key_name), newRV_noinc((SV*)L2HV), 0);
+    }
+    else {
+        if (!SvOK(*svtmp) || !SvROK(*svtmp)) return 0;
+#if defined(MUTABLE_PTR)
+        L2HV = (HV*)MUTABLE_PTR(SvRV(*svtmp));
+#else
+        L2HV = (HV*)(SvRV(*svtmp));
+#endif
+    }
 
-	SvREFCNT_inc(func);
-	cb->func = func;
+    /* first delete already stored value */
+    hv_delete(L2HV, data_name, strlen(data_name), G_DISCARD);
+    if (data!=NULL)
+        if (SvOK(data))
+            hv_store(L2HV, data_name, strlen(data_name), data, 0);
+
+    return 1;
 }
 
-void
-ssleay_ctx_passwd_cb_userdata_set(SSL_CTX* ctx, SV* data) {
-	ssleay_ctx_passwd_cb_t* cb;
+SV* cb_data_advanced_get(void *ptr, const char* data_name)
+{
+    HV * L2HV;
+    SV ** svtmp;
+    int len;
+    char key_name[500];
+    dMY_CXT;
 
-	cb = ssleay_ctx_passwd_cb_get(ctx);
+    len = snprintf(key_name, sizeof(key_name), "ptr_%p", ptr);
+    if (len == sizeof(key_name)) return &PL_sv_undef; /* return undef on error - key_name too short*/
 
-	if (cb->data)
-		SvREFCNT_dec(cb->data);
+    /* get level-2 hash */
+    svtmp = hv_fetch(MY_CXT.global_cb_data, key_name, strlen(key_name), 0);
+    if (svtmp == NULL)  return &PL_sv_undef;
+    if (!SvOK(*svtmp))  return &PL_sv_undef;
+    if (!SvROK(*svtmp)) return &PL_sv_undef;
+#if defined(MUTABLE_PTR)
+    L2HV = (HV*)MUTABLE_PTR(SvRV(*svtmp));
+#else
+    L2HV = (HV*)(SvRV(*svtmp));
+#endif
 
-	SvREFCNT_inc(data);
-	cb->data = data;
+    /* get stored data */
+    svtmp = hv_fetch(L2HV, data_name, strlen(data_name), 0);
+    if (svtmp == NULL) return &PL_sv_undef;
+    if (!SvOK(*svtmp)) return &PL_sv_undef;
+
+    return *svtmp;
 }
 
-void
-ssleay_ctx_passwd_cb_free_func(SSL_CTX* ctx) {
-	ssleay_ctx_passwd_cb_t* cb;
+int cb_data_advanced_drop(void *ptr)
+{
+    int len;
+    char key_name[500];
+    dMY_CXT;
 
-	cb = ssleay_ctx_passwd_cb_get(ctx);
+    len = snprintf(key_name, sizeof(key_name), "ptr_%p", ptr);
+    if (len == sizeof(key_name)) return 0; /* error  - key_name too short*/
 
-	if (cb && cb->func) {
-		SvREFCNT_dec(cb->func);
-		cb->func = NULL;
-	}
+    hv_delete(MY_CXT.global_cb_data, key_name, strlen(key_name), G_DISCARD);
+    return 1;
 }
 
-void
-ssleay_ctx_passwd_cb_free_userdata(SSL_CTX* ctx) {
-	ssleay_ctx_passwd_cb_t* cb;
+/* ============= callback stuff - invoke functions ============== */
 
-	cb = ssleay_ctx_passwd_cb_get(ctx);
+static int ssleay_verify_callback_invoke (int ok, X509_STORE_CTX* x509_store)
+{
+    dSP;
+    SSL* ssl;
+    int count = -1, res;
+    SV *cb_func;
 
-	if (cb && cb->data) {
-		SvREFCNT_dec(cb->data);
-		cb->data = NULL;
-	}
+    PR1("STARTED: ssleay_verify_callback_invoke\n");
+    ssl = X509_STORE_CTX_get_ex_data(x509_store, SSL_get_ex_data_X509_STORE_CTX_idx());
+    cb_func = cb_data_advanced_get(ssl, "ssleay_verify_callback!!func");
+    
+    if (!SvOK(cb_func)) {
+        SSL_CTX* ssl_ctx = SSL_get_SSL_CTX(ssl);
+        cb_func = cb_data_advanced_get(ssl_ctx, "ssleay_verify_callback!!func");
+     }
+ 
+    if (!SvOK(cb_func))
+        croak("Net::SSLeay: verify_callback called, but not set to point to any perl function.\n");
+
+    ENTER;
+    SAVETMPS;
+
+    PR2("verify callback glue ok=%d\n", ok);
+
+    PUSHMARK(sp);
+    EXTEND( sp, 2 );
+    PUSHs( sv_2mortal(newSViv(ok)) );
+    PUSHs( sv_2mortal(newSViv(PTR2IV(x509_store))) );
+    PUTBACK;
+
+    PR1("About to call verify callback.\n");
+    count = call_sv(cb_func, G_SCALAR);
+    PR1("Returned from verify callback.\n");
+
+    SPAGAIN;
+
+    if (count != 1)
+        croak ( "Net::SSLeay: verify_callback perl function did not return a scalar.\n");
+
+    res = POPi;
+
+    PUTBACK;
+    FREETMPS;
+    LEAVE;
+
+    return res;
 }
 
-/* pem_password_cb function */
+static int ssleay_ctx_passwd_cb_invoke(char *buf, int size, int rwflag, void *userdata)
+{
+    dSP;
+    int count = -1;
+    char *res;
+    SV *cb_func, *cb_data;
 
-static int
-ssleay_ctx_passwd_cb_invoke(char *buf, int size, int rwflag, void *userdata) {
-	dSP;
-	dMY_CXT;
+    PR1("STARTED: ssleay_ctx_passwd_cb_invoke\n");
+    cb_func = cb_data_advanced_get(userdata, "ssleay_ctx_passwd_cb!!func");
+    cb_data = cb_data_advanced_get(userdata, "ssleay_ctx_passwd_cb!!data");
 
-	int count;
-	char *res;
-	ssleay_ctx_passwd_cb_t* cb = (ssleay_ctx_passwd_cb_t*)userdata;
+    if(!SvOK(cb_func))
+        croak ("Net::SSLeay: ssleay_ctx_passwd_cb_invoke called, but not set to point to any perl function.\n");
 
-	if (cb->tid != MY_CXT.tid) {
-		warn ("Net::SSLeay: cross-thread callbacks not allowed!");
-		buf[0] = '\0';
-		return 0;
-	}
+    ENTER;
+    SAVETMPS;
 
-	ENTER;
-	SAVETMPS;
+    PUSHMARK(sp);
+    XPUSHs(sv_2mortal(newSViv(rwflag)));
+    XPUSHs(sv_2mortal(newSVsv(cb_data)));
+    PUTBACK;
 
-	PUSHMARK(sp);
-	XPUSHs( sv_2mortal( newSViv(rwflag)) );
-	if (cb->data)
-		XPUSHs( cb->data );
-	PUTBACK;
+    count = call_sv( cb_func, G_SCALAR );
 
-	if (cb->func == NULL)
-		croak ("Net::SSLeay: ssleay_ctx_passwd_cb_invoke called, but not "
-			   "set to point to any perl function.\n");
+    SPAGAIN;
 
-	count = call_sv( cb->func, G_SCALAR );
+    if (count != 1)
+        croak("Net::SSLeay: ssleay_ctx_passwd_cb_invoke perl function did not return a scalar.\n");
 
-	SPAGAIN;
+    res = POPp;
 
-	if (count != 1)
-		croak ("Net::SSLeay: ssleay_ctx_passwd_cb_invoke "
-			   "perl function did not return a scalar.\n");
+    if (res == NULL) {
+        *buf = '\0';
+    } else {
+        strncpy(buf, res, size);
+        buf[size - 1] = '\0';
+    }
 
-	res = POPp;
+    PUTBACK;
+    FREETMPS;
+    LEAVE;
 
-	if (res == NULL) {
-		*buf = '\0';
-	} else {
-		strncpy(buf, res, size);
-		buf[size - 1] = '\0';
-	}
-
-	PUTBACK;
-	FREETMPS;
-	LEAVE;
-
-	return strlen(buf);
+    return strlen(buf);
 }
 
-ssleay_ctx_cert_verify_cb_t*
-ssleay_ctx_cert_verify_cb_new(SSL_CTX* ctx, SV* func, SV* data) {
-	ssleay_ctx_cert_verify_cb_t* cb;
-	SV* hash_value;
-	SV* key;
-	char* key_str;
-	STRLEN key_len;
-        dMY_CXT;
+int ssleay_ctx_cert_verify_cb_invoke(X509_STORE_CTX* x509_store_ctx, void* data)
+{
+    dSP;
+    int count = -1;
+    int res;
+    SV * cb_func, *cb_data;
+    void *ptr;
+    SSL *ssl;
 
-	cb = New(0, cb, 1, ssleay_ctx_cert_verify_cb_t);
+    PR1("STARTED: ssleay_ctx_cert_verify_cb_invoke\n");
+#if OPENSSL_VERSION_NUMBER < 0x0090700fL
+    ssl = X509_STORE_CTX_get_ex_data(x509_store_ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
+    ptr = (void*) SSL_get_SSL_CTX(ssl);
+#else
+    ssl = NULL;
+    ptr = (void*) data;
+#endif
 
-	SvREFCNT_inc(func);
-	SvREFCNT_inc(data);
-	cb->func = func;
-	cb->data = data;
-	cb->tid = MY_CXT.tid;
+    cb_func = cb_data_advanced_get(ptr, "ssleay_ctx_cert_verify_cb!!func");
+    cb_data = cb_data_advanced_get(ptr, "ssleay_ctx_cert_verify_cb!!data");
 
-	if (ctx == NULL) {
-		croak( "Net::SSLeay: ctx == NULL in ssleay_ctx_cert_verify_cb_new" );
-	}
+    if(!SvOK(cb_func))
+        croak ("Net::SSLeay: ssleay_ctx_cert_verify_cb_invoke called, but not set to point to any perl function.\n");
 
-	hash_value = sv_2mortal(newSViv( PTR2IV(cb) ));
+    ENTER;
+    SAVETMPS;
 
-	key = sv_2mortal(newSViv( PTR2IV(ctx) ));
-	key_str = SvPV(key, key_len);
+    PUSHMARK(SP);
+    XPUSHs(sv_2mortal(newSViv(PTR2IV(x509_store_ctx))));
+    XPUSHs(sv_2mortal(newSVsv(cb_data)));
+    PUTBACK;
 
-	if (MY_CXT.ssleay_ctx_cert_verify_cbs == (HV*)NULL)
-		MY_CXT.ssleay_ctx_cert_verify_cbs = newHV();
+    count = call_sv(cb_func, G_SCALAR);
 
-	SvREFCNT_inc(hash_value);
-	hv_store( MY_CXT.ssleay_ctx_cert_verify_cbs, key_str, key_len, hash_value, 0 );
+    SPAGAIN;
 
-	return cb;
-}
+    if (count != 1)
+        croak("Net::SSLeay: ssleay_ctx_cert_verify_cb_invoke perl function did not return a scalar.\n");
 
-ssleay_ctx_cert_verify_cb_t*
-ssleay_ctx_cert_verify_cb_get(SSL_CTX* ctx) {
-	SV* key;
-	char* key_str;
-	STRLEN key_len;
-	SV** hash_value;
-	ssleay_ctx_cert_verify_cb_t* cb;
-        dMY_CXT;
+    res = POPi;
 
-	key = sv_2mortal(newSViv( PTR2IV(ctx) ));
-	key_str = SvPV(key, key_len);
+    PUTBACK;
+    FREETMPS;
+    LEAVE;
 
-	hash_value = hv_fetch( MY_CXT.ssleay_ctx_cert_verify_cbs, key_str, key_len, 0 );
-
-	if (hash_value == NULL || *hash_value == NULL) {
-		cb = NULL;
-	} else {
-		cb = INT2PTR(ssleay_ctx_cert_verify_cb_t*, SvIV( *hash_value ));
-	}
-
-	return cb;
-}
-
-void
-ssleay_ctx_cert_verify_cb_free(SSL_CTX* ctx) {
-	ssleay_ctx_passwd_cb_t* cb;
-
-	cb = ssleay_ctx_cert_verify_cb_get(ctx);
-
-	if (cb) {
-		if (cb->func) {
-			SvREFCNT_dec(cb->func);
-			cb->func = NULL;
-		}
-
-		if (cb->data) {
-			SvREFCNT_dec(cb->data);
-			cb->data = NULL;
-		}
-	}
-
-	Safefree(cb);
-}
-
-int
-ssleay_ctx_cert_verify_cb_invoke(X509_STORE_CTX* x509_store_ctx, void* data) {
-	dSP;
-	dMY_CXT;
-
-	int count;
-	int res;
-	ssleay_ctx_cert_verify_cb_t* cb = (ssleay_ctx_cert_verify_cb_t*)data;
-
-	if (cb->tid != MY_CXT.tid) {
-		warn ("Net::SSLeay: cross-thread callbacks not allowed!");
-		return -1;
-	}
-
-	ENTER;
-	SAVETMPS;
-
-	PUSHMARK(SP);
-	XPUSHs(sv_2mortal(newSViv( PTR2IV(x509_store_ctx) )));
-	if (cb->data) {
-		XPUSHs( cb->data );
-	}
-	PUTBACK;
-
-	if (cb->func == NULL) {
-		croak ("Net::SSLeay: ssleay_ctx_cert_verify_cb_invoke called, but not "
-				"set to point to any perl function.\n");
-	}
-
-	count = call_sv( cb->func, G_SCALAR );
-
-	SPAGAIN;
-
-	if (count != 1) {
-		croak ("Net::SSLeay: ssleay_ctx_cert_verify_cb_invoke "
-				"perl function did not return a scalar.\n");
-	}
-
-	res = POPi;
-
-	PUTBACK;
-	FREETMPS;
-	LEAVE;
-
-	return res;
+    return res;
 }
 
 #if defined(SSL_F_SSL_SET_HELLO_EXTENSION) || defined(SSL_F_SSL_SET_SESSION_TICKET_EXT)
 
-ssleay_session_secret_cb_t*
-ssleay_session_secret_cb_new(SSL* s, SV* func, SV* data) {
-	ssleay_session_secret_cb_t* cb;
-	SV* hash_value;
-	SV* key;
-	char* key_str;
-	STRLEN key_len;
-        dMY_CXT;
-
-	cb = New(0, cb, 1, ssleay_session_secret_cb_t);
-
-	SvREFCNT_inc(func);
-	SvREFCNT_inc(data);
-	cb->func = func;
-	cb->data = data;
-	cb->tid = MY_CXT.tid;
-
-	if (s == NULL) {
-		croak( "Net::SSLeay: s == NULL in ssleay_session_secret_cb_new" );
-	}
-
-	hash_value = sv_2mortal(newSViv( PTR2IV(cb) ));
-
-	key = sv_2mortal(newSViv( PTR2IV(s) ));
-	key_str = SvPV(key, key_len);
-
-	if (MY_CXT.ssleay_session_secret_cbs == (HV*)NULL)
-		MY_CXT.ssleay_session_secret_cbs = newHV();
-
-	SvREFCNT_inc(hash_value);
-	hv_store( MY_CXT.ssleay_session_secret_cbs, key_str, key_len, hash_value, 0 );
-
-	return cb;
-}
-
-ssleay_session_secret_cb_t*
-ssleay_session_secret_cb_get(SSL* s) {
-	SV* key;
-	char* key_str;
-	STRLEN key_len;
-	SV** hash_value;
-	ssleay_session_secret_cb_t* cb;
-        dMY_CXT;
-
-	key = sv_2mortal(newSViv( PTR2IV(s) ));
-	key_str = SvPV(key, key_len);
-
-	hash_value = hv_fetch( MY_CXT.ssleay_session_secret_cbs, key_str, key_len, 0 );
-
-	if (hash_value == NULL || *hash_value == NULL) {
-		cb = NULL;
-	} else {
-		cb = INT2PTR(ssleay_session_secret_cb_t*, SvIV( *hash_value ));
-	}
-
-	return cb;
-}
-
-void
-ssleay_session_secret_cb_free(SSL* s) {
-	ssleay_session_secret_cb_t* cb;
-
-	cb = ssleay_session_secret_cb_get(s);
-
-	if (cb) {
-		if (cb->func) {
-			SvREFCNT_dec(cb->func);
-			cb->func = NULL;
-		}
-
-		if (cb->data) {
-			SvREFCNT_dec(cb->data);
-			cb->data = NULL;
-		}
-	}
-
-	Safefree(cb);
-}
-
-int
-ssleay_session_secret_cb_invoke(SSL* s, void* secret, int *secret_len,
-			   STACK_OF(SSL_CIPHER) *peer_ciphers,
-			   SSL_CIPHER **cipher, void *arg) 
+int ssleay_session_secret_cb_invoke(SSL* s, void* secret, int *secret_len,
+                                    STACK_OF(SSL_CIPHER) *peer_ciphers,
+                                    SSL_CIPHER **cipher, void *arg)
 {
-	dSP;
-	dMY_CXT;
+    dSP;
+    int count = -1, res, i;
+    AV *ciphers = newAV();
+    SV *pref_cipher = sv_newmortal();
+    SV * cb_func, *cb_data;
 
-	int count;
-	int res;
-	int i;
-	AV *ciphers = newAV();
-	SV *pref_cipher = sv_newmortal();
-	ssleay_session_secret_cb_t* cb = (ssleay_session_secret_cb_t*)arg;
+    PR1("STARTED: ssleay_session_secret_cb_invoke\n");
+    cb_func = cb_data_advanced_get(arg, "ssleay_session_secret_cb!!func");
+    cb_data = cb_data_advanced_get(arg, "ssleay_session_secret_cb!!data");
 
-	if (cb->tid != MY_CXT.tid) {
-		warn ("Net::SSLeay: cross-thread callbacks not allowed!");
-		return -1;
-	}
+    if(!SvOK(cb_func))
+        croak ("Net::SSLeay: ssleay_ctx_passwd_cb_invoke called, but not set to point to any perl function.\n");
 
-	ENTER;
-	SAVETMPS;
+    ENTER;
+    SAVETMPS;
 
-	PUSHMARK(SP);
-	XPUSHs( sv_2mortal( newSVpv(secret, *secret_len)) );
-	for (i=0; i<sk_SSL_CIPHER_num(peer_ciphers); i++)
-	{
-	    SSL_CIPHER *c = sk_SSL_CIPHER_value(peer_ciphers,i);
-	    av_store(ciphers, i, sv_2mortal(newSVpv(SSL_CIPHER_get_name(c), 0)));
-	}
-       XPUSHs(sv_2mortal(newRV_inc((SV*)ciphers)));
-       XPUSHs(sv_2mortal(newRV_inc(pref_cipher)));
+    PUSHMARK(SP);
 
-	if (cb->data) {
-		XPUSHs( cb->data );
-	}
-	PUTBACK;
+    XPUSHs( sv_2mortal( newSVpv(secret, *secret_len)) );
+    for (i=0; i<sk_SSL_CIPHER_num(peer_ciphers); i++) {
+        SSL_CIPHER *c = sk_SSL_CIPHER_value(peer_ciphers,i);
+        av_store(ciphers, i, sv_2mortal(newSVpv(SSL_CIPHER_get_name(c), 0)));
+    }
+    XPUSHs(sv_2mortal(newRV_inc((SV*)ciphers)));
+    XPUSHs(sv_2mortal(newRV_inc(pref_cipher)));
+    XPUSHs(sv_2mortal(newSVsv(cb_data)));
 
-	if (cb->func == NULL) {
-		croak ("Net::SSLeay: ssleay_session_secret_cb_invoke called, but not "
-				"set to point to any perl function.\n");
-	}
+    PUTBACK;
 
-	count = call_sv( cb->func, G_SCALAR );
+    count = call_sv( cb_func, G_SCALAR );
 
-	SPAGAIN;
+    SPAGAIN;
 
-	if (count != 1) {
-		croak ("Net::SSLeay: ssleay_session_secret_cb_invoke "
-				"perl function did not return a scalar.\n");
-	}
+    if (count != 1)
+        croak ("Net::SSLeay: ssleay_session_secret_cb_invoke perl function did not return a scalar.\n");
 
-	res = POPi;
-	if (res)
-	{
-	    /* See if there is a preferred cipher selected, if so
-	       it is an index into the stack */
-	    if (SvIOK(pref_cipher))
-	    {
-		*cipher = sk_SSL_CIPHER_value(peer_ciphers, SvIV(pref_cipher));
-	    }
-	}
+    res = POPi;
+    if (res) {
+        /* See if there is a preferred cipher selected, if so it is an index into the stack */
+        if (SvIOK(pref_cipher))
+            *cipher = sk_SSL_CIPHER_value(peer_ciphers, SvIV(pref_cipher));
+    }
 
-	PUTBACK;
-	FREETMPS;
-	LEAVE;
+    PUTBACK;
+    FREETMPS;
+    LEAVE;
 
-	return res;
+    return res;
 }
 
 #endif
 
-ssleay_RSA_generate_key_cb_t*
-ssleay_RSA_generate_key_cb_new(SV* func, SV* data) {
-	ssleay_RSA_generate_key_cb_t* cb;
-	dMY_CXT;
+#if OPENSSL_VERSION_NUMBER >= 0x10001000L && !defined(OPENSSL_NO_NEXTPROTONEG)
 
-	New(0, cb, 1, ssleay_RSA_generate_key_cb_t);
-	cb->func = NULL;
-	cb->data = NULL;
-	cb->tid = MY_CXT.tid;
-
-	if (func) {
-		SvREFCNT_inc(func);
-		cb->func = func;
-	}
-
-	if (data) {
-		SvREFCNT_inc(data);
-		cb->data = data;
-	}
-
-	return cb;
+int next_proto_helper_AV2protodata(AV * list, unsigned char *out)
+{
+    int i, last_index, ptr = 0;
+    last_index = av_len(list);
+    if (last_index<0) return 0;
+    for(i=0; i<=last_index; i++) {
+        char *p = SvPV_nolen(*av_fetch(list, i, 0));
+        int len = strlen(p);
+        if (len<0 || len>255) return 0;
+        if (out) {
+            /* if out == NULL we only calculate the length of output */
+            out[ptr] = (unsigned char)len;
+            strncpy(out+ptr+1, p, len);
+        }
+        ptr += strlen(p) + 1;
+    }
+    return ptr;
 }
 
-void
-ssleay_RSA_generate_key_cb_free(ssleay_RSA_generate_key_cb_t* cb) {
-	if (cb) {
-		if (cb->func) {
-			SvREFCNT_dec(cb->func);
-			cb->func = NULL;
-		}
-
-		if (cb->data) {
-			SvREFCNT_dec(cb->data);
-			cb->data = NULL;
-		}
-	}
-
-	Safefree(cb);
+int next_proto_helper_protodata2AV(AV * list, const unsigned char *in, unsigned int inlen)
+{
+    unsigned int i = 0;
+    unsigned char il;
+    if (!list || inlen<2) return 0;   
+    while (i<inlen) {
+        il = in[i++];
+        if (i+il > inlen) return 0;
+        av_push(list, newSVpv(in+i, il));
+        i += il;
+    }
+    return 1;
 }
 
-void
-ssleay_RSA_generate_key_cb_invoke(int i, int n, void* data) {
-	dSP;
-	dMY_CXT;
+int next_proto_select_cb_invoke(SSL *ssl, unsigned char **out, unsigned char *outlen,
+                                const unsigned char *in, unsigned int inlen, void *arg)
+{
+    SV *cb_func, *cb_data;
+    unsigned char *next_proto_data;
+    unsigned char next_proto_len;
+    int next_proto_status;
+    SSL_CTX *ctx = SSL_get_SSL_CTX(ssl);
 
-	ssleay_RSA_generate_key_cb_t* cb = (ssleay_RSA_generate_key_cb_t*)data;
+    PR1("STARTED: next_proto_select_cb_invoke\n");
+    cb_func = cb_data_advanced_get(ctx, "next_proto_select_cb!!func");
+    cb_data = cb_data_advanced_get(ctx, "next_proto_select_cb!!data");
+    /* clear last_status value = store undef */
+    cb_data_advanced_put(ssl, "next_proto_select_cb!!last_status", NULL);
+    cb_data_advanced_put(ssl, "next_proto_select_cb!!last_negotiated", NULL);
 
-	if (cb->tid != MY_CXT.tid) {
-		warn ("Net::SSLeay: cross-thread callbacks not allowed!");
-		return;
-	}
+    if (SvROK(cb_func) && (SvTYPE(SvRV(cb_func)) == SVt_PVCV)) {
+        int count = -1;
+        AV *list = newAV();
+        SV *tmpsv;
+        dSP;
+        
+        if (!next_proto_helper_protodata2AV(list, in, inlen)) return SSL_TLSEXT_ERR_ALERT_FATAL;
 
-	if (cb->func) {
-		int count;
+        ENTER;
+        SAVETMPS;
+        PUSHMARK(SP);
+        XPUSHs(sv_2mortal(newSViv(PTR2IV(ssl))));
+        XPUSHs(sv_2mortal(newRV_inc((SV*)list)));
+        XPUSHs(sv_2mortal(newSVsv(cb_data)));
+        PUTBACK;
+        count = call_sv( cb_func, G_ARRAY );
+        SPAGAIN;
+        if (count != 2)
+            croak ("Net::SSLeay: next_proto_select_cb_invoke perl function did not return 2 values.\n");
+        next_proto_data = POPpx;
+        next_proto_status = POPi;
+        PUTBACK;
+        FREETMPS;
+        LEAVE;
 
-		ENTER;
-		SAVETMPS;
+        if (strlen(next_proto_data)>255) return SSL_TLSEXT_ERR_ALERT_FATAL;
+        next_proto_len = (unsigned char)strlen(next_proto_data);
+        /* store last_status + last_negotiated into global hash */
+        cb_data_advanced_put(ssl, "next_proto_select_cb!!last_status", newSViv(next_proto_status));
+        tmpsv = newSVpv(next_proto_data, next_proto_len);
+        cb_data_advanced_put(ssl, "next_proto_select_cb!!last_negotiated", tmpsv);
+        *out = SvPVX(tmpsv);
+        *outlen = next_proto_len;
+        return SSL_TLSEXT_ERR_OK;
+    }
+    else if (SvROK(cb_data) && (SvTYPE(SvRV(cb_data)) == SVt_PVAV)) {
+        next_proto_len = next_proto_helper_AV2protodata((AV*)SvRV(cb_data), NULL);
+        Newx(next_proto_data, next_proto_len, unsigned char);
+        if (!next_proto_data) return SSL_TLSEXT_ERR_ALERT_FATAL;
+        next_proto_len = next_proto_helper_AV2protodata((AV*)SvRV(cb_data), next_proto_data);
 
-		PUSHMARK(sp);
+        next_proto_status = SSL_select_next_proto(out, outlen, in, inlen, next_proto_data, next_proto_len);
 
-		XPUSHs(sv_2mortal( newSViv(i) ));
-		XPUSHs(sv_2mortal( newSViv(n) ));
-
-		if (cb->data)
-			XPUSHs( cb->data );
-
-		PUTBACK;
-
-		count = call_sv( cb->func, G_VOID|G_DISCARD );
-
-		if (count != 0)
-			croak ("Net::SSLeay: ssleay_RSA_generate_key_cb_invoke "
-					"perl function did return something in void context.\n");
-
-		PUTBACK;
-		FREETMPS;
-		LEAVE;
-	}
+        /* store last_status + last_negotiated into global hash */
+        cb_data_advanced_put(ssl, "next_proto_select_cb!!last_status", newSViv(next_proto_status));
+        cb_data_advanced_put(ssl, "next_proto_select_cb!!last_negotiated", newSVpv(*out, *outlen));
+        Safefree(next_proto_data);
+        return SSL_TLSEXT_ERR_OK;
+    }
+    return SSL_TLSEXT_ERR_ALERT_FATAL;
 }
 
+int next_protos_advertised_cb_invoke(SSL *ssl, const unsigned char **out, unsigned int *outlen, void *arg_unused)
+{
+    SV *cb_func, *cb_data;
+    unsigned char *protodata = NULL;
+    unsigned short protodata_len = 0;
+    SV *tmpsv;
+    AV *tmpav;
+    SSL_CTX *ctx = SSL_get_SSL_CTX(ssl);
+
+    PR1("STARTED: next_protos_advertised_cb_invoke");
+    cb_func = cb_data_advanced_get(ctx, "next_protos_advertised_cb!!func");
+    cb_data = cb_data_advanced_get(ctx, "next_protos_advertised_cb!!data");
+
+    if (SvROK(cb_func) && (SvTYPE(SvRV(cb_func)) == SVt_PVCV)) {
+        int count = -1;
+        dSP;
+        ENTER;
+        SAVETMPS;
+        PUSHMARK(SP);
+        XPUSHs(sv_2mortal(newSViv(PTR2IV(ssl))));
+        XPUSHs(sv_2mortal(newSVsv(cb_data)));
+        PUTBACK;
+        count = call_sv( cb_func, G_SCALAR );
+        SPAGAIN;
+        if (count != 1)
+            croak ("Net::SSLeay: next_protos_advertised_cb_invoke perl function did not return scalar value.\n");
+        tmpsv = POPs;
+        if (SvOK(tmpsv) && SvROK(tmpsv) && (SvTYPE(SvRV(tmpsv)) == SVt_PVAV)) {
+            tmpav = (AV*)SvRV(tmpsv);
+            protodata_len = next_proto_helper_AV2protodata(tmpav, NULL);
+            Newx(protodata, protodata_len, unsigned char);
+            if (protodata) next_proto_helper_AV2protodata(tmpav, protodata);
+        }
+        PUTBACK;
+        FREETMPS;
+        LEAVE;
+    }
+    else if (SvROK(cb_data) && (SvTYPE(SvRV(cb_data)) == SVt_PVAV)) {
+        tmpav = (AV*)SvRV(cb_data);
+        protodata_len = next_proto_helper_AV2protodata(tmpav, NULL);
+        Newx(protodata, protodata_len, unsigned char);
+        if (protodata) next_proto_helper_AV2protodata(tmpav, protodata);
+    }    
+    if (protodata) {
+        tmpsv = newSVpv(protodata, protodata_len);
+        Safefree(protodata);
+        cb_data_advanced_put(ssl, "next_protos_advertised_cb!!last_advertised", tmpsv);
+        *out = SvPVX(tmpsv);
+        *outlen = protodata_len;
+        return SSL_TLSEXT_ERR_OK;
+    }
+    return SSL_TLSEXT_ERR_ALERT_FATAL;
+}
+
+#endif
+
+int pem_password_cb_invoke(char *buf, int bufsize, int rwflag, void *data) {
+    dSP;
+    char *str;
+    int count = -1, str_len = 0;
+    simple_cb_data_t* cb = (simple_cb_data_t*)data;
+
+    PR1("STARTED: pem_password_cb_invoke\n");
+    if (cb->func && SvOK(cb->func)) {
+        ENTER;
+        SAVETMPS;
+
+        PUSHMARK(sp);
+
+        XPUSHs(sv_2mortal( newSViv(bufsize-1) ));
+        XPUSHs(sv_2mortal( newSViv(rwflag) ));
+        if (cb->data) XPUSHs( cb->data );
+
+        PUTBACK;
+
+        count = call_sv( cb->func, G_SCALAR );
+
+        SPAGAIN;
+
+        buf[0] = 0; /* start with an empty password */
+        if (count != 1) {
+            croak("Net::SSLeay: pem_password_cb_invoke perl function did not return a scalar.\n");
+        }
+        else {
+            str = POPpx;
+            str_len = strlen(str);
+            if (str_len+1 < bufsize) {
+                strcpy(buf, str);
+            }
+            else {
+                str_len = 0;
+                warn("Net::SSLeay: pem_password_cb_invoke password too long\n");
+            }
+        }
+
+        PUTBACK;
+        FREETMPS;
+        LEAVE;
+    }
+    return str_len;
+}
+
+void ssleay_RSA_generate_key_cb_invoke(int i, int n, void* data)
+{
+    dSP;
+    int count = -1;
+    simple_cb_data_t* cb = (simple_cb_data_t*)data;
+
+    /* PR1("STARTED: ssleay_RSA_generate_key_cb_invoke\n"); / * too noisy */
+    if (cb->func && SvOK(cb->func)) {
+        ENTER;
+        SAVETMPS;
+
+        PUSHMARK(sp);
+
+        XPUSHs(sv_2mortal( newSViv(i) ));
+        XPUSHs(sv_2mortal( newSViv(n) ));
+        if (cb->data) XPUSHs( cb->data );
+
+        PUTBACK;
+
+        count = call_sv( cb->func, G_VOID|G_DISCARD );
+
+        if (count != 0)
+            croak ("Net::SSLeay: ssleay_RSA_generate_key_cb_invoke "
+                   "perl function did return something in void context.\n");
+
+        PUTBACK;
+        FREETMPS;
+        LEAVE;
+    }
+}
+
+/* ============= end of callback stuff ============== */
 
 MODULE = Net::SSLeay		PACKAGE = Net::SSLeay          PREFIX = SSL_
 
 PROTOTYPES: ENABLE
 
 BOOT:
-{
     {
     MY_CXT_INIT;
     LIB_initialized = 0;
 #ifdef USE_ITHREADS
     MUTEX_INIT(&LIB_init_mutex);
-#if defined(OPENSSL_THREADS) && OPENSSL_VERSION_NUMBER >= 0x00904000L
-    openssl_threads_init();    
+#ifdef OPENSSL_THREADS
+    /* If we running under ModPerl, we dont need our own thread locking because
+     * perl threads are not supported under mod-perl, and we can fall back to the thread
+     * locking built in to mod-ssl      
+     */
+     if (!hv_fetch(get_hv("ENV", 1), "MOD_PERL", 8, 0))
+	openssl_threads_init();
 #endif
 #endif
-    MY_CXT.ssleay_ctx_verify_callbacks = (HV*)NULL;
-    MY_CXT.ssleay_ctx_passwd_cbs = (HV*)NULL;
-    MY_CXT.ssleay_ctx_cert_verify_cbs = (HV*)NULL;
-    MY_CXT.ssleay_session_secret_cbs = (HV*)NULL;
+    /* initialize global shared callback data hash */
+    MY_CXT.global_cb_data = newHV();
     MY_CXT.tid = get_my_thread_id();
+    PR3("BOOT: tid=%d my_perl=0x%p\n", MY_CXT.tid, my_perl);
     }
-}
 
 void
 CLONE(...)
 CODE:
     MY_CXT_CLONE;
-    /* we are cleaning all callback related HV's as we want
-     * to prevent cross-thread callbacks
+    /* reset all callback related data as we want to prevent 
+     * cross-thread callbacks
+     * TODO: later somebody can make the global hash MY_CXT.global_cb_data
+     * somehow shared between threads
      */
-    MY_CXT.ssleay_ctx_verify_callbacks = (HV*)NULL;
-    MY_CXT.ssleay_ctx_passwd_cbs = (HV*)NULL;
-    MY_CXT.ssleay_ctx_cert_verify_cbs = (HV*)NULL;
-    MY_CXT.ssleay_session_secret_cbs = (HV*)NULL;
+    MY_CXT.global_cb_data = newHV();
     MY_CXT.tid = get_my_thread_id();
-
-void
-END(...)
-CODE:
-#ifdef USE_ITHREADS
-    MUTEX_DESTROY(&LIB_init_mutex);
-#if defined(OPENSSL_THREADS) && OPENSSL_VERSION_NUMBER >= 0x00904000L
-    openssl_threads_cleanup();
-#endif
-#endif
+    PR3("CLONE: tid=%d my_perl=0x%p\n", MY_CXT.tid, my_perl);
 
 double
 constant(name)
-     char *		name
+        char * name
+    CODE:
+        errno = 0;
+        RETVAL = constant(name, strlen(name));
+    OUTPUT:
+        RETVAL
 
 int
 hello()
         CODE:
-        PR("\tSSLeay Hello World!\n");
+        PR1("\tSSLeay Hello World!\n");
         RETVAL = 1;
         OUTPUT:
         RETVAL
@@ -1001,7 +1076,10 @@ SSL_CTX_new_with_method(meth)
 
 void
 SSL_CTX_free(ctx)
-     SSL_CTX *	        ctx
+        SSL_CTX * ctx
+     CODE:
+        cb_data_advanced_drop(ctx); /* clean callback related data from global hash */
+        SSL_CTX_free(ctx);
 
 int
 SSL_CTX_add_session(ctx,ses)
@@ -1036,37 +1114,26 @@ SSL_CTX_load_verify_locations(ctx,CAfile,CApath)
      RETVAL
 
 void
-SSL_CTX_set_verify(ctx,mode,callback=NULL)
-	SSL_CTX * ctx
-	int                mode
-	SV *               callback
-	PREINIT:
-	SV* key;
-	char* key_str;
-	STRLEN key_len;
-        dMY_CXT;
-	CODE:
+SSL_CTX_set_verify(ctx,mode,callback=&PL_sv_undef)
+        SSL_CTX * ctx
+        int mode
+        SV * callback
+    CODE:
 
-	if (MY_CXT.ssleay_ctx_verify_callbacks == (HV*)NULL)
-		MY_CXT.ssleay_ctx_verify_callbacks = newHV();
+    /* Former versions of SSLeay checked if the callback was a true boolean value
+     * and didn't call it if it was false. Therefor some people set the callback
+     * to '0' if they don't want to use it (IO::Socket::SSL for example). Therefor
+     * we don't execute the callback if it's value isn't something true to retain
+     * backwards compatibility.
+     */
 
-	key = sv_2mortal(newSViv( PTR2IV(ctx) ));
-	key_str = SvPV(key, key_len);
-
-	/* Former versions of SSLeay checked if the callback was a true boolean value
-	 * and didn't call it if it was false. Therefor some people set the callback
-	 * to '0' if they don't want to use it (IO::Socket::SSL for example). Therefor
-	 * we don't execute the callback if it's value isn't something true to retain
-	 * backwards compatibility.
-	 */
-
-	if (callback == NULL || !SvTRUE(callback)) {
-		hv_delete( MY_CXT.ssleay_ctx_verify_callbacks, key_str, key_len, G_DISCARD );
-		SSL_CTX_set_verify( ctx, mode, NULL );
-	} else {
-		hv_store( MY_CXT.ssleay_ctx_verify_callbacks, key_str, key_len, newSVsv(callback), 0 );
-		SSL_CTX_set_verify( ctx, mode, &ssleay_verify_callback_invoke );
-	}
+    if (callback==NULL || !SvOK(callback) || !SvTRUE(callback)) {
+        SSL_CTX_set_verify(ctx, mode, NULL);
+        cb_data_advanced_put(ctx, "ssleay_verify_callback!!func", NULL);
+    } else {
+        cb_data_advanced_put(ctx, "ssleay_verify_callback!!func", newSVsv(callback));
+        SSL_CTX_set_verify(ctx, mode, &ssleay_verify_callback_invoke);
+    }
 
 int
 SSL_get_error(s,ret)
@@ -1081,7 +1148,10 @@ SSL_new(ctx)
 
 void
 SSL_free(s)
-     SSL *              s
+        SSL * s
+     CODE:
+        cb_data_advanced_drop(s); /* clean callback related data from global hash */
+        SSL_free(s);
 
 #if 0 /* this seems to be gone in 0.9.0 */
 void
@@ -1212,9 +1282,8 @@ SSL_write_partial(s,from,count,buf)
      } else
        buf = SvPV( ST(3), len);
        */
-     PRN("write_partial from",from);
-     PRN(&buf[from],len);
-     PRN("write_partial count",count);
+     PR4("write_partial from=%d count=%d len=%d\n",from,count,len);
+     /*PR2("buf='%s'\n",&buf[from]); / * too noisy */
      len -= from;
      if (len < 0) {
        croak("from beyound end of buffer");
@@ -1366,11 +1435,17 @@ const char *
 SSL_get_cipher(s)
      SSL *              s
 
-char *
-SSL_get_shared_ciphers(s,buf,len)
-     SSL *              s
-     char *             buf
-     int                len
+void
+SSL_get_shared_ciphers(s,ignored_param1=0,ignored_param2=0)
+        SSL *s
+        int ignored_param1
+        int ignored_param2
+    PREINIT:
+        char buf[8192];
+    CODE:
+        ST(0) = sv_newmortal();   /* undef to start with */
+        if(SSL_get_shared_ciphers(s, buf, sizeof(buf)))
+            sv_setpvn(ST(0), buf, strlen(buf));
 
 X509 *
 SSL_get_peer_certificate(s)
@@ -1378,29 +1453,18 @@ SSL_get_peer_certificate(s)
 
 void
 SSL_set_verify(s,mode,callback)
-    SSL *              s
-    int                mode
-    SV *               callback
-	PREINIT:
-	SV* key;
-	char* key_str;
-	STRLEN key_len;
-        dMY_CXT;
+        SSL * s
+        int mode
+        SV * callback
     CODE:
-
-	if (MY_CXT.ssleay_ctx_verify_callbacks == (HV*)NULL)
-		MY_CXT.ssleay_ctx_verify_callbacks = newHV();
-
-	key = sv_2mortal(newSViv( PTR2IV(s) ));
-	key_str = SvPV(key, key_len);
-
-	if (callback == NULL) {
-		hv_delete( MY_CXT.ssleay_ctx_verify_callbacks, key_str, key_len, G_DISCARD );
-		SSL_set_verify( s, mode, NULL );
-	} else {
-		hv_store( MY_CXT.ssleay_ctx_verify_callbacks, key_str, key_len, newSVsv(callback), 0 );
-		SSL_set_verify( s, mode, &ssleay_verify_callback_invoke );
-	}
+        if (callback==NULL || !SvOK(callback)) {
+            SSL_set_verify(s, mode, NULL);
+            cb_data_advanced_put(s, "ssleay_verify_callback!!func", NULL);
+        }
+        else {
+            cb_data_advanced_put(s, "ssleay_verify_callback!!func", newSVsv(callback));
+            SSL_set_verify(s, mode, &ssleay_verify_callback_invoke);
+        }
 
 void
 SSL_set_bio(s,rbio,wbio)
@@ -1584,7 +1648,7 @@ SSL_CTX_sess_get_cache_size(ctx)
 long
 SSL_CTX_sess_set_cache_size(ctx,size)
      SSL_CTX *          ctx
-     int                size      
+     int                size
 
 int
 SSL_want(s)
@@ -1593,6 +1657,13 @@ SSL_want(s)
 int
 SSL_state(s)
      SSL *              s
+
+#if OPENSSL_VERSION_NUMBER >= 0x0090806fL && !defined(OPENSSL_NO_TLSEXT)
+
+long
+SSL_set_tlsext_host_name(SSL *ssl, const char *name)
+
+#endif
 
 BIO_METHOD *
 BIO_f_ssl()
@@ -1644,7 +1715,7 @@ SSL_library_init()
 #endif
 		RETVAL = 0;
 		if (!LIB_initialized) {
-			RETVAL = SSL_library_init();           
+			RETVAL = SSL_library_init();
 			LIB_initialized = 1;
 		}
 #ifdef USE_ITHREADS
@@ -1783,6 +1854,39 @@ X509_NAME*
 X509_get_subject_name(cert)
      X509 *      cert
 
+int
+X509_set_issuer_name(X509 *x, X509_NAME *name)
+
+int
+X509_set_subject_name(X509 *x, X509_NAME *name)
+
+int
+X509_set_version(X509 *x, long version)
+
+int
+X509_set_pubkey(X509 *x, EVP_PKEY *pkey)
+
+long
+X509_get_version(X509 *x)
+
+EVP_PKEY *
+X509_get_pubkey(X509 *x)
+
+ASN1_INTEGER *
+X509_get_serialNumber(X509 *x)
+
+int
+X509_set_serialNumber(X509 *x, ASN1_INTEGER *serial)
+
+int
+X509_certificate_type(X509 *x, EVP_PKEY *pubkey=NULL);
+
+int
+X509_sign(X509 *x, EVP_PKEY *pkey, const EVP_MD *md)
+
+int
+X509_verify(X509 *x, EVP_PKEY *r)
+
 void
 X509_NAME_oneline(name)
 	X509_NAME *    name
@@ -1790,9 +1894,38 @@ X509_NAME_oneline(name)
 	char * buf;
 	CODE:
 	ST(0) = sv_newmortal();   /* Undefined to start with */
-	if (buf = X509_NAME_oneline(name, NULL, 0))
+	if ((buf = X509_NAME_oneline(name, NULL, 0))) {
 		sv_setpvn( ST(0), buf, strlen(buf));
-	OPENSSL_free(buf); /* mem was allocated by openssl */
+		OPENSSL_free(buf); /* mem was allocated by openssl */
+	}
+
+void
+X509_NAME_print_ex(name,flags=XN_FLAG_RFC2253,utf8_decode=0)
+        X509_NAME * name
+        unsigned long flags
+        int utf8_decode
+    PREINIT:
+        char * buf;
+        BIO * bp;
+        int n, i, ident=0;
+    CODE:
+        ST(0) = sv_newmortal(); /* undef to start with */
+        bp = BIO_new(BIO_s_mem());
+        if (bp) {
+            if (X509_NAME_print_ex(bp, name, ident, flags)) {
+                n = BIO_ctrl_pending(bp);
+                New(0, buf, n, char);
+                if (buf) {
+                    i = BIO_read(bp,buf,n);
+                    if (i>=0 && i<=n) {
+                        sv_setpvn(ST(0), buf, i);
+                        if (utf8_decode) sv_utf8_decode(ST(0));
+                    }
+                    Safefree(buf);
+                }
+            }
+            BIO_free(bp);
+        }
 
 void
 X509_NAME_get_text_by_NID(name,nid)
@@ -1805,12 +1938,381 @@ X509_NAME_get_text_by_NID(name,nid)
 	ST(0) = sv_newmortal();   /* Undefined to start with */
 	length = X509_NAME_get_text_by_NID(name, nid, NULL, 0);
 
-       if (length>=0) {				 
+       if (length>=0) {
                New(0, buf, length+1, char);
                if (X509_NAME_get_text_by_NID(name, nid, buf, length + 1)>=0)
                        sv_setpvn( ST(0), buf, length);
                Safefree(buf);
        }
+
+#if OPENSSL_VERSION_NUMBER >= 0x0090500fL
+#define REM17 "requires 0.9.5+"
+
+int
+X509_NAME_add_entry_by_NID(name,nid,type,bytes,loc=-1,set=0)
+        X509_NAME *name
+        int nid
+        int type
+        int loc
+        int set
+    PREINIT:
+        STRLEN len;
+    INPUT:
+        unsigned char *bytes = (unsigned char *)SvPV(ST(3), len);
+    CODE:
+        RETVAL = X509_NAME_add_entry_by_NID(name,nid,type,bytes,len,loc,set);
+    OUTPUT:
+        RETVAL
+
+int
+X509_NAME_add_entry_by_OBJ(name,obj,type,bytes,loc=-1,set=0)
+        X509_NAME *name
+        ASN1_OBJECT *obj
+        int type
+        int loc
+        int set
+    PREINIT:
+        STRLEN len;
+    INPUT:
+        unsigned char *bytes = (unsigned char *)SvPV(ST(3), len);
+    CODE:
+        RETVAL = X509_NAME_add_entry_by_OBJ(name,obj,type,bytes,len,loc,set);
+    OUTPUT:
+        RETVAL
+
+int
+X509_NAME_add_entry_by_txt(name,field,type,bytes,loc=-1,set=0)
+        X509_NAME *name
+        char *field
+        int type
+        int loc
+        int set
+    PREINIT:
+        STRLEN len;
+    INPUT:
+        unsigned char *bytes = (unsigned char *)SvPV(ST(3), len);
+    CODE:
+        RETVAL = X509_NAME_add_entry_by_txt(name,field,type,bytes,len,loc,set);
+    OUTPUT:
+        RETVAL
+
+#endif
+
+int
+X509_NAME_cmp(const X509_NAME *a, const X509_NAME *b)
+
+int
+X509_NAME_entry_count(X509_NAME *name)
+
+X509_NAME_ENTRY *
+X509_NAME_get_entry(X509_NAME *name, int loc)
+
+ASN1_STRING *
+X509_NAME_ENTRY_get_data(X509_NAME_ENTRY *ne)
+
+ASN1_OBJECT *
+X509_NAME_ENTRY_get_object(X509_NAME_ENTRY *ne)
+
+void
+X509_CRL_free(X509_CRL *x)
+
+X509_CRL *
+X509_CRL_new()
+
+#if OPENSSL_VERSION_NUMBER >= 0x0090700fL
+#define REM19 "requires 0.9.7+"
+
+int
+X509_CRL_set_version(X509_CRL *x, long version)
+
+int
+X509_CRL_set_issuer_name(X509_CRL *x, X509_NAME *name)
+
+int
+X509_CRL_set_lastUpdate(X509_CRL *x, ASN1_TIME *tm)
+
+int
+X509_CRL_set_nextUpdate(X509_CRL *x, ASN1_TIME *tm)
+
+int
+X509_CRL_sort(X509_CRL *x)
+
+#endif
+
+long
+X509_CRL_get_version(X509_CRL *x)
+
+X509_NAME *
+X509_CRL_get_issuer(X509_CRL *x)
+
+ASN1_TIME *
+X509_CRL_get_lastUpdate(X509_CRL *x)
+
+ASN1_TIME *
+X509_CRL_get_nextUpdate(X509_CRL *x)
+
+int
+X509_CRL_verify(X509_CRL *a, EVP_PKEY *r)
+
+int
+X509_CRL_sign(X509_CRL *x, EVP_PKEY *pkey, const EVP_MD *md)
+
+#if OPENSSL_VERSION_NUMBER >= 0x0090700fL
+#define REM20 "requires 0.9.7+"
+
+int
+P_X509_CRL_set_serial(crl,crl_number)
+        X509_CRL *crl
+        ASN1_INTEGER * crl_number;
+    CODE:
+        RETVAL = 0;
+        if (crl && crl_number)
+            if (X509_CRL_add1_ext_i2d(crl, NID_crl_number, crl_number, 0, 0)) RETVAL = 1;
+    OUTPUT:
+        RETVAL
+
+ASN1_INTEGER *
+P_X509_CRL_get_serial(crl)
+        X509_CRL *crl
+    INIT:
+        int i;
+    CODE:
+        RETVAL = (ASN1_INTEGER *)X509_CRL_get_ext_d2i(crl, NID_crl_number, &i, NULL);
+        if (!RETVAL || i==-1) XSRETURN_UNDEF;
+    OUTPUT:
+        RETVAL
+
+void
+P_X509_CRL_add_revoked_serial_hex(crl,serial_hex,rev_time,reason_code=0,comp_time=NULL)
+        X509_CRL *crl
+        char * serial_hex
+        ASN1_TIME *rev_time
+        long reason_code
+        ASN1_TIME *comp_time
+    PREINIT:
+        BIGNUM *bn = NULL;
+        ASN1_INTEGER *sn;
+        X509_REVOKED *rev;
+        ASN1_ENUMERATED *rsn = NULL;
+        int rv;
+    PPCODE:
+        rv=0;
+        rev = X509_REVOKED_new();
+        if (rev) {
+            if (BN_hex2bn(&bn, serial_hex)) {
+                sn = BN_to_ASN1_INTEGER(bn, NULL);
+                if (sn) {
+                    X509_REVOKED_set_serialNumber(rev, sn);
+                    ASN1_INTEGER_free(sn);
+                    rv = 1;
+                }
+                BN_free(bn);
+            }
+        }
+        if (!rv) XSRETURN_IV(0);
+
+        if (!rev_time) XSRETURN_IV(0);
+        if (!X509_REVOKED_set_revocationDate(rev, rev_time)) XSRETURN_IV(0);
+
+        if(reason_code) {
+            rv = 0;
+            rsn = ASN1_ENUMERATED_new();
+            if (rsn) {
+                if (ASN1_ENUMERATED_set(rsn, reason_code))
+                    if (X509_REVOKED_add1_ext_i2d(rev, NID_crl_reason, rsn, 0, 0))
+                        rv=1;
+                ASN1_ENUMERATED_free(rsn);
+            }
+            if (!rv) XSRETURN_IV(0);
+        }
+
+        if(comp_time) {
+            X509_REVOKED_add1_ext_i2d(rev, NID_invalidity_date, comp_time, 0, 0);
+        }
+
+        if(!X509_CRL_add0_revoked(crl, rev)) XSRETURN_IV(0);
+        XSRETURN_IV(1);
+
+#endif
+
+X509_REQ *
+X509_REQ_new()
+
+void
+X509_REQ_free(X509_REQ *x)
+
+X509_NAME *
+X509_REQ_get_subject_name(X509_REQ *x)
+
+int
+X509_REQ_set_subject_name(X509_REQ *x, X509_NAME *name)
+
+int
+X509_REQ_set_pubkey(X509_REQ *x, EVP_PKEY *pkey)
+
+EVP_PKEY *
+X509_REQ_get_pubkey(X509_REQ *x)
+
+int
+X509_REQ_sign(X509_REQ *x, EVP_PKEY *pk, const EVP_MD *md)
+
+int
+X509_REQ_verify(X509_REQ *x, EVP_PKEY *r)
+
+int
+X509_REQ_set_version(X509_REQ *x, long version)
+
+long
+X509_REQ_get_version(X509_REQ *x)
+
+int
+X509_REQ_get_attr_count(const X509_REQ *req);
+
+int
+X509_REQ_get_attr_by_NID(const X509_REQ *req, int nid, int lastpos=-1)
+
+int
+X509_REQ_get_attr_by_OBJ(const X509_REQ *req, ASN1_OBJECT *obj, int lastpos=-1)
+
+int
+X509_REQ_add1_attr_by_NID(req,nid,type,bytes)
+        X509_REQ *req
+        int nid
+        int type
+    PREINIT:
+        STRLEN len;
+    INPUT:
+        unsigned char *bytes = (unsigned char *)SvPV(ST(3), len);
+    CODE:
+        RETVAL = X509_REQ_add1_attr_by_NID(req,nid,type,bytes,len);
+    OUTPUT:
+        RETVAL
+
+#if OPENSSL_VERSION_NUMBER >= 0x0090700fL
+#define REM21 "requires 0.9.7+"
+
+void
+P_X509_REQ_get_attr(req,n)
+        X509_REQ *req
+        int n
+    INIT:
+        X509_ATTRIBUTE * att;
+        int count, i;
+        ASN1_STRING * s;
+    PPCODE:
+        att = X509_REQ_get_attr(req,n);
+        if (att->single) {
+            s = (att->value.single->value.asn1_string);
+            XPUSHs(sv_2mortal(newSViv(PTR2IV(s))));
+        }
+        else {
+            count = sk_ASN1_TYPE_num(att->value.set);
+            for (i=0; i<count; i++) {
+                s = (sk_ASN1_TYPE_value(att->value.set, i)->value.asn1_string);
+                XPUSHs(sv_2mortal(newSViv(PTR2IV(s))));
+            }
+        }
+
+#endif
+
+int
+P_X509_REQ_add_extensions(x,...)
+        X509_REQ *x
+    PREINIT:
+        int i=1;
+        int nid;
+        char *data;
+        X509_EXTENSION *ex;
+        STACK_OF(X509_EXTENSION) *stack;
+    CODE:
+        if (items>1) {
+            RETVAL = 1;
+            stack = sk_X509_EXTENSION_new_null();
+            while(i+1<items) {
+                nid = SvIV(ST(i));
+                data = SvPV_nolen(ST(i+1));
+                i+=2;
+                ex = X509V3_EXT_conf_nid(NULL, NULL, nid, data);
+                if (ex)
+                    sk_X509_EXTENSION_push(stack, ex);
+                else
+                    RETVAL = 0;
+            }
+            X509_REQ_add_extensions(x, stack);
+            sk_X509_EXTENSION_pop_free(stack, X509_EXTENSION_free);
+        }
+        else
+            RETVAL = 0;
+    OUTPUT:
+        RETVAL
+
+int
+P_X509_add_extensions(x,ca_cert,...)
+        X509 *x
+        X509 *ca_cert
+    PREINIT:
+        int i=2;
+        int nid;
+        char *data;
+        X509_EXTENSION *ex;
+        X509V3_CTX ctx;
+    CODE:
+        if (items>1) {
+            RETVAL = 1;
+            while(i+1<items) {
+                nid = SvIV(ST(i));
+                data = SvPV_nolen(ST(i+1));
+                i+=2;
+                X509V3_set_ctx(&ctx, ca_cert, x, NULL, NULL, 0);
+                ex = X509V3_EXT_conf_nid(NULL, &ctx, nid, data);
+                if (ex) {
+                    X509_add_ext(x,ex,-1);
+                    X509_EXTENSION_free(ex);
+                }
+                else {
+                    warn("failure during X509V3_EXT_conf_nid() for nid=%d\n", nid);
+                    ERR_print_errors_fp(stderr);
+                    RETVAL = 0;
+                }
+            }
+        }
+        else
+            RETVAL = 0;
+    OUTPUT:
+            RETVAL
+
+void
+P_X509_copy_extensions(x509_req,x509,override=1)
+        X509_REQ *x509_req
+        X509 *x509
+        int override
+    PREINIT:
+        STACK_OF(X509_EXTENSION) *exts = NULL;
+        X509_EXTENSION *ext, *tmpext;
+        ASN1_OBJECT *obj;
+        int i, idx, ret = 1;
+    PPCODE:
+        if (!x509 || !x509_req) XSRETURN_IV(0);
+        exts = X509_REQ_get_extensions(x509_req);
+        for(i = 0; i < sk_X509_EXTENSION_num(exts); i++) {
+            ext = sk_X509_EXTENSION_value(exts, i);
+            obj = X509_EXTENSION_get_object(ext);
+            idx = X509_get_ext_by_OBJ(x509, obj, -1);
+            /* Does extension exist? */
+            if (idx != -1) {
+                if (override) continue; /* don't override existing extension */
+                /* Delete all extensions of same type */
+                do {
+                    tmpext = X509_get_ext(x509, idx);
+                    X509_delete_ext(x509, idx);
+                    X509_EXTENSION_free(tmpext);
+                    idx = X509_get_ext_by_OBJ(x509, obj, -1);
+                } while (idx != -1);
+            }
+            if (!X509_add_ext(x509, ext, -1)) ret = 0;
+        }
+        sk_X509_EXTENSION_pop_free(exts, X509_EXTENSION_free);
+        XSRETURN_IV(ret);
 
 X509 *
 X509_STORE_CTX_get_current_cert(x509_store_ctx)
@@ -1879,7 +2381,7 @@ X509_get_subjectAltNames(cert)
 		&& (subjAltNameDNs = X509V3_EXT_d2i(subjAltNameExt)))
 	{
 		num_gnames = sk_GENERAL_NAME_num(subjAltNameDNs);
-	
+
 		for (j = 0; j < num_gnames; j++)
                 {
 		     subjAltNameDN = sk_GENERAL_NAME_value(subjAltNameDNs, j);
@@ -1892,10 +2394,10 @@ X509_get_subjectAltNames(cert)
                          PUSHs(sv_2mortal(newSViv(subjAltNameDN->type)));
                          PUSHs(sv_2mortal(newSVpv((const char*)ASN1_STRING_data(subjAltNameDN->d.otherName->value->value.utf8string), ASN1_STRING_length(subjAltNameDN->d.otherName->value->value.utf8string))));
                          break;
-                     
+
                      case GEN_EMAIL:
                      case GEN_DNS:
-                     case GEN_URI:	
+                     case GEN_URI:
                          EXTEND(SP, 2);
                          count++;
                          PUSHs(sv_2mortal(newSViv(subjAltNameDN->type)));
@@ -1918,14 +2420,128 @@ X509_get_subjectAltNames(cert)
                          PUSHs(sv_2mortal(newSViv(subjAltNameDN->type)));
                          PUSHs(sv_2mortal(newSVpv((const char*)subjAltNameDN->d.ip->data, subjAltNameDN->d.ip->length)));
                          break;
-                        
+
                      }
 		}
 	}
 	XSRETURN(count * 2);
 
+#if OPENSSL_VERSION_NUMBER >= 0x0090700fL
+
+void
+P_X509_get_crl_distribution_points(cert)
+        X509 * cert
+    INIT:
+        GENERAL_NAMES *gnames;
+        GENERAL_NAME *gn;
+        STACK_OF(DIST_POINT) *points;
+        DIST_POINT *p;
+        int i, j;
+    PPCODE:
+        points = X509_get_ext_d2i(cert, NID_crl_distribution_points, NULL, NULL);
+        if (points)
+        for (i = 0; i < sk_DIST_POINT_num(points); i++) {
+            p = sk_DIST_POINT_value(points, i);
+            if (!p->distpoint)
+                continue;
+            if (p->distpoint->type == 0) {
+                /* full name */
+                gnames = p->distpoint->name.fullname;
+                for (j = 0; j < sk_GENERAL_NAME_num(gnames); j++) {
+                    gn = sk_GENERAL_NAME_value(gnames, j);
+                    XPUSHs(sv_2mortal(newSVpv((char*)ASN1_STRING_data(gn->d.ia5),ASN1_STRING_length(gn->d.ia5))));
+                }
+            }
+            else {
+                /* relative name - not supported */
+                /* XXX-TODO: the code below is just an idea; do not enable it without proper test case
+                BIO *bp;
+                char *buf;
+                int n;
+                X509_NAME ntmp;
+                ntmp.entries = p->distpoint->name.relativename;
+                bp = BIO_new(BIO_s_mem());
+                if (bp) {
+                    X509_NAME_print_ex(bp, &ntmp, 0, XN_FLAG_RFC2253);
+                    n = BIO_ctrl_pending(bp);
+                    New(0, buf, n, char);
+                    if (buf) {
+                        j = BIO_read(bp,buf,n);
+                        if (j>=0 && j<=n) XPUSHs(sv_2mortal(newSVpvn(buf,j)));
+                        Safefree(buf);
+                    }
+                    BIO_free(bp);
+                }
+                */
+            }
+        }
+
+void
+P_X509_get_ext_key_usage(cert,format=0)
+        X509 * cert
+        int format
+    PREINIT:
+        EXTENDED_KEY_USAGE *extusage;
+        int i, nid;
+        char buffer[100]; /* openssl doc: a buffer length of 80 should be more than enough to handle any OID encountered in practice */
+        ASN1_OBJECT *o;
+    PPCODE:
+        extusage = X509_get_ext_d2i(cert, NID_ext_key_usage, NULL, NULL);
+        for(i = 0; i < sk_ASN1_OBJECT_num(extusage); i++) {
+           o = sk_ASN1_OBJECT_value(extusage,i);
+           nid = OBJ_obj2nid(o);
+           OBJ_obj2txt(buffer, sizeof(buffer)-1, o, 1);
+           if(format==0)
+               XPUSHs(sv_2mortal(newSVpv(buffer,0)));          /* format 0: oid */
+           else if(format==1 && nid>0)
+               XPUSHs(sv_2mortal(newSViv(nid)));               /* format 1: nid */
+           else if(format==2 && nid>0)
+               XPUSHs(sv_2mortal(newSVpv(OBJ_nid2sn(nid),0))); /* format 2: shortname */
+           else if(format==3 && nid>0)
+               XPUSHs(sv_2mortal(newSVpv(OBJ_nid2ln(nid),0))); /* format 3: longname */
+        }
+
+#endif
+
+void
+P_X509_get_key_usage(cert)
+        X509 * cert
+    INIT:
+        ASN1_BIT_STRING * u;
+    PPCODE:
+        u = X509_get_ext_d2i(cert, NID_key_usage, NULL, NULL);
+        if (u) {
+            if (ASN1_BIT_STRING_get_bit(u,0)) XPUSHs(sv_2mortal(newSVpv("digitalSignature",0)));
+            if (ASN1_BIT_STRING_get_bit(u,1)) XPUSHs(sv_2mortal(newSVpv("nonRepudiation",0)));
+            if (ASN1_BIT_STRING_get_bit(u,2)) XPUSHs(sv_2mortal(newSVpv("keyEncipherment",0)));
+            if (ASN1_BIT_STRING_get_bit(u,3)) XPUSHs(sv_2mortal(newSVpv("dataEncipherment",0)));
+            if (ASN1_BIT_STRING_get_bit(u,4)) XPUSHs(sv_2mortal(newSVpv("keyAgreement",0)));
+            if (ASN1_BIT_STRING_get_bit(u,5)) XPUSHs(sv_2mortal(newSVpv("keyCertSign",0)));
+            if (ASN1_BIT_STRING_get_bit(u,6)) XPUSHs(sv_2mortal(newSVpv("cRLSign",0)));
+            if (ASN1_BIT_STRING_get_bit(u,7)) XPUSHs(sv_2mortal(newSVpv("encipherOnly",0)));
+            if (ASN1_BIT_STRING_get_bit(u,8)) XPUSHs(sv_2mortal(newSVpv("decipherOnly",0)));
+        }
+
+void
+P_X509_get_netscape_cert_type(cert)
+        X509 * cert
+    INIT:
+        ASN1_BIT_STRING * u;
+    PPCODE:
+        u = X509_get_ext_d2i(cert, NID_netscape_cert_type, NULL, NULL);
+        if (u) {
+            if (ASN1_BIT_STRING_get_bit(u,0)) XPUSHs(sv_2mortal(newSVpv("client",0)));
+            if (ASN1_BIT_STRING_get_bit(u,1)) XPUSHs(sv_2mortal(newSVpv("server",0)));
+            if (ASN1_BIT_STRING_get_bit(u,2)) XPUSHs(sv_2mortal(newSVpv("email",0)));
+            if (ASN1_BIT_STRING_get_bit(u,3)) XPUSHs(sv_2mortal(newSVpv("objsign",0)));
+            if (ASN1_BIT_STRING_get_bit(u,4)) XPUSHs(sv_2mortal(newSVpv("reserved",0)));
+            if (ASN1_BIT_STRING_get_bit(u,5)) XPUSHs(sv_2mortal(newSVpv("sslCA",0)));
+            if (ASN1_BIT_STRING_get_bit(u,6)) XPUSHs(sv_2mortal(newSVpv("emailCA",0)));
+            if (ASN1_BIT_STRING_get_bit(u,7)) XPUSHs(sv_2mortal(newSVpv("objCA",0)));
+        }
+
 int
-X509_get_ext_by_NID(x,nid,loc)
+X509_get_ext_by_NID(x,nid,loc=-1)
 	X509* x
 	int nid
 	int loc
@@ -1934,7 +2550,48 @@ X509_EXTENSION *
 X509_get_ext(x,loc)
 	X509* x
 	int loc
-	
+
+int
+X509_EXTENSION_get_critical(X509_EXTENSION *ex)
+
+ASN1_OCTET_STRING *
+X509_EXTENSION_get_data(X509_EXTENSION *ne)
+
+ASN1_OBJECT *
+X509_EXTENSION_get_object(X509_EXTENSION *ex)
+
+int
+X509_get_ext_count(X509 *x)
+
+void
+X509V3_EXT_print(ext,flags=0,utf8_decode=0)
+        X509_EXTENSION * ext
+        unsigned long flags
+        int utf8_decode
+    PREINIT:
+        BIO * bp;
+        char * buf;
+        int i, n;
+        int indent=0;
+    CODE:
+        ST(0) = sv_newmortal(); /* undef to start with */
+        bp = BIO_new(BIO_s_mem());
+        if (bp) {
+            if(X509V3_EXT_print(bp,ext,flags,indent)) {
+                n = BIO_ctrl_pending(bp);
+                New(0, buf, n, char);
+                if (buf) {
+                    i = BIO_read(bp,buf,n);
+                    if (i>=0 && i<=n) {
+                        sv_setpvn(ST(0), buf, i);
+                        if (utf8_decode) sv_utf8_decode(ST(0));
+                    }
+                    Safefree(buf);
+                }
+            }
+            BIO_free(bp);
+        }
+
 void *
 X509V3_EXT_d2i(ext)
 	X509_EXTENSION *ext
@@ -1963,53 +2620,53 @@ X509_STORE_CTX_set_cert(x509_store_ctx,x)
      X509_STORE_CTX * x509_store_ctx
      X509 * x
 
-int 
+int
 X509_STORE_add_cert(ctx, x)
     X509_STORE *ctx
     X509 *x
 
-int 
+int
 X509_STORE_add_crl(ctx, x)
     X509_STORE *ctx
     X509_CRL *x
 
 #if OPENSSL_VERSION_NUMBER >= 0x0090800fL
 
-void 
+void
 X509_STORE_set_flags(ctx, flags)
     X509_STORE *ctx
     long flags
 
-void 
+void
 X509_STORE_set_purpose(ctx, purpose)
     X509_STORE *ctx
     int purpose
 
-void 
+void
 X509_STORE_set_trust(ctx, trust)
     X509_STORE *ctx
     int trust
 
-int 
+int
 X509_STORE_set1_param(ctx, pm)
     X509_STORE *ctx
     X509_VERIFY_PARAM *pm
 
 #endif
 
-int 
+int
 X509_load_cert_file(ctx, file, type)
     X509_LOOKUP *ctx
     char *file
     int type
 
-int 
+int
 X509_load_crl_file(ctx, file, type)
     X509_LOOKUP *ctx
     char *file
     int type
 
-int 
+int
 X509_load_cert_crl_file(ctx, file, type)
     X509_LOOKUP *ctx
     char *file
@@ -2017,8 +2674,90 @@ X509_load_cert_crl_file(ctx, file, type)
 
 const char *
 X509_verify_cert_error_string(n)
-    long n   
+    long n
 
+ASN1_INTEGER *
+ASN1_INTEGER_new()
+
+void
+ASN1_INTEGER_free(ASN1_INTEGER *i)
+
+int
+ASN1_INTEGER_set(ASN1_INTEGER *i, long val)
+
+long
+ASN1_INTEGER_get(ASN1_INTEGER *a)
+
+void
+P_ASN1_INTEGER_set_hex(i,str)
+        ASN1_INTEGER * i
+        char * str
+    INIT:
+        BIGNUM *bn;
+        int rv = 1;
+    PPCODE:
+        bn = BN_new();
+        if (!BN_hex2bn(&bn, str)) XSRETURN_IV(0);
+        if (!BN_to_ASN1_INTEGER(bn, i)) rv = 0;
+        BN_free(bn);
+        XSRETURN_IV(rv);
+
+void
+P_ASN1_INTEGER_set_dec(i,str)
+        ASN1_INTEGER * i
+        char * str
+    INIT:
+        BIGNUM *bn;
+        int rv = 1;
+    PPCODE:
+        bn = BN_new();
+        if (!BN_dec2bn(&bn, str)) XSRETURN_IV(0);
+        if (!BN_to_ASN1_INTEGER(bn, i)) rv = 0;
+        BN_free(bn);
+        XSRETURN_IV(rv);
+
+void
+P_ASN1_INTEGER_get_hex(i)
+        ASN1_INTEGER * i
+    INIT:
+        BIGNUM *bn;
+        char *result;
+    PPCODE:
+        bn = BN_new();
+        if (!bn) XSRETURN_UNDEF;
+        ASN1_INTEGER_to_BN(i, bn);
+        result = BN_bn2hex(bn);
+        BN_free(bn);
+        if (!result) XSRETURN_UNDEF;
+        XPUSHs(sv_2mortal(newSVpv((const char*)result, strlen(result))));
+        OPENSSL_free(result);
+
+void
+P_ASN1_INTEGER_get_dec(i)
+        ASN1_INTEGER * i
+    INIT:
+        BIGNUM *bn;
+        char *result;
+    PPCODE:
+        bn = BN_new();
+        if (!bn) XSRETURN_UNDEF;
+        ASN1_INTEGER_to_BN(i, bn);
+        result = BN_bn2dec(bn);
+        BN_free(bn);
+        if (!result) XSRETURN_UNDEF;
+        XPUSHs(sv_2mortal(newSVpv((const char*)result, strlen(result))));
+        OPENSSL_free(result);
+
+void
+P_ASN1_STRING_get(s,utf8_decode=0)
+        ASN1_STRING * s
+        int utf8_decode
+    PREINIT:
+        SV * u8;
+    PPCODE:
+        u8 = newSVpv((const char*)ASN1_STRING_data(s), ASN1_STRING_length(s));
+        if (utf8_decode) sv_utf8_decode(u8);
+        XPUSHs(sv_2mortal(u8));
 
 ASN1_TIME *
 X509_get_notBefore(cert)
@@ -2045,14 +2784,14 @@ ASN1_TIME_free(s)
 ASN1_TIME *
 ASN1_TIME_new()
 
-void 
+void
 P_ASN1_TIME_put2string(tm)
      ASN1_TIME * tm
      PREINIT:
      BIO *bp=NULL;
      int i=0;
      char buffer[256];
-     ALIAS:     
+     ALIAS:
      P_ASN1_UTCTIME_put2string = 1
      CODE:
      ST(0) = sv_newmortal(); /* undef retval to start with */
@@ -2061,7 +2800,7 @@ P_ASN1_TIME_put2string(tm)
          if (bp) {
              ASN1_TIME_print(bp,tm);
              i = BIO_read(bp,buffer,255);
-             buffer[i] = '\0';        
+             buffer[i] = '\0';
              if (i>0)
                  sv_setpvn(ST(0), buffer, i);
              BIO_free(bp);
@@ -2083,15 +2822,15 @@ P_ASN1_TIME_get_isotime(tm)
      ASN1_TIME_to_generalizedtime(tm,&tmp);
      if (tmp) {
        if (ASN1_GENERALIZEDTIME_check(tmp)) {
-         if (strlen(tmp->data)>=14 && strlen(tmp->data)<200) {
+         if (strlen((char*)tmp->data)>=14 && strlen((char*)tmp->data)<200) {
            strcpy (buf,"yyyy-mm-ddThh:mm:ss");
-           strncpy(buf,   tmp->data,   4);
-           strncpy(buf+5, tmp->data+4, 2);
-           strncpy(buf+8, tmp->data+6, 2);
-           strncpy(buf+11,tmp->data+8, 2);
-           strncpy(buf+14,tmp->data+10,2);
-           strncpy(buf+17,tmp->data+12,2);
-           if (strlen(tmp->data)>14) strcat(buf+19,tmp->data+14);
+           strncpy(buf,   (char*)tmp->data,   4);
+           strncpy(buf+5, (char*)tmp->data+4, 2);
+           strncpy(buf+8, (char*)tmp->data+6, 2);
+           strncpy(buf+11,(char*)tmp->data+8, 2);
+           strncpy(buf+14,(char*)tmp->data+10,2);
+           strncpy(buf+17,(char*)tmp->data+12,2);
+           if (strlen((char*)tmp->data)>14) strcat(buf+19,(char*)tmp->data+14);
          }
        }
        ASN1_GENERALIZEDTIME_free(tmp);
@@ -2106,7 +2845,6 @@ P_ASN1_TIME_set_isotime(tm,str)
      PREINIT:
      ASN1_TIME t;
      char buf[256];
-     int y=0,M=0,d=0,h=0,m=0,s=0;
      int i,rv;
      CODE:
      if (!tm) XSRETURN_UNDEF;
@@ -2116,7 +2854,7 @@ P_ASN1_TIME_set_isotime(tm,str)
      for (i=5;  i<7;  i++) if ((str[i] > '9') || (str[i] < '0')) XSRETURN_UNDEF;
      for (i=8;  i<10; i++) if ((str[i] > '9') || (str[i] < '0')) XSRETURN_UNDEF;
      for (i=11; i<13; i++) if ((str[i] > '9') || (str[i] < '0')) XSRETURN_UNDEF;
-     for (i=14; i<16; i++) if ((str[i] > '9') || (str[i] < '0')) XSRETURN_UNDEF;     
+     for (i=14; i<16; i++) if ((str[i] > '9') || (str[i] < '0')) XSRETURN_UNDEF;
      for (i=17; i<19; i++) if ((str[i] > '9') || (str[i] < '0')) XSRETURN_UNDEF;
      strncpy(buf,    str,    4);
      strncpy(buf+4,  str+5,  2);
@@ -2125,8 +2863,8 @@ P_ASN1_TIME_set_isotime(tm,str)
      strncpy(buf+10, str+14, 2);
      strncpy(buf+12, str+17, 2);
      buf[14] = '\0';
-     if (strlen(str)>19 && strlen(str)<200) strcat(buf,str+19);     
-     
+     if (strlen(str)>19 && strlen(str)<200) strcat(buf,str+19);
+
      /* WORKAROUND: ASN1_TIME_set_string() not available in 0.9.8 !!!*/
      /* in 1.0.0 we would simply: rv = ASN1_TIME_set_string(tm,buf); */
      t.length = strlen(buf);
@@ -2141,7 +2879,7 @@ P_ASN1_TIME_set_isotime(tm,str)
      tm->flags = t.flags;
      if (!ASN1_STRING_set(tm,t.data,t.length)) XSRETURN_UNDEF;
      rv = 1;
-     
+
      /* end of ASN1_TIME_set_string() reimplementation */
 
      ST(0) = sv_newmortal();
@@ -2154,67 +2892,215 @@ EVP_PKEY_copy_parameters(to,from)
      EVP_PKEY *		to
      EVP_PKEY * 	from
 
-void 
-PEM_get_string_X509(x509)
-     X509 *	x509
-     PREINIT:
-     BIO *bp;
-     int i;
-     char buffer[8196];
-     CODE:
-     bp = BIO_new(BIO_s_mem());
-     PEM_write_bio_X509(bp,x509);
-     i = BIO_read(bp,buffer,8195);
-     buffer[i] = '\0';
-     ST(0) = sv_newmortal();   /* Undefined to start with */
-     if ( i > 0 )
-         sv_setpvn( ST(0), buffer, i );
-     BIO_free(bp);
+EVP_PKEY *
+EVP_PKEY_new()
+
+void
+EVP_PKEY_free(EVP_PKEY *pkey)
 
 int
-CTX_use_PKCS12_file(ctx, file, password)
-    SSL_CTX *          ctx
-    char *             file
-    char *             password
-    PREINIT:
-    BIO *bio;
-    int count;
-    char buffer[16384];
-    PKCS12 *p12;
-    EVP_PKEY* private_key;
-    X509* certificate;
-    FILE *fp;
-    CODE:
-    RETVAL = 1;
+EVP_PKEY_assign_RSA(EVP_PKEY *pkey, RSA *key)
 
-    fp = fopen (file, "rb");   
-    bio = BIO_new(BIO_s_mem());
-    while(count = fread(buffer, 1, sizeof(buffer), fp))
-	BIO_write(bio, buffer, count);
-    fclose(fp);
+int
+EVP_PKEY_bits(EVP_PKEY *pkey)
 
-    {
-#if OPENSSL_VERSION_NUMBER >= 0x0090700fL
-    OPENSSL_add_all_algorithms_noconf();
-    /* note by kmx: not sure what happens on pre-0.9.7 */
+int
+EVP_PKEY_size(EVP_PKEY *pkey)
+
+#if OPENSSL_VERSION_NUMBER >= 0x1000000fL
+
+int
+EVP_PKEY_id(const EVP_PKEY *pkey)
+
 #endif
-    }
 
-    p12 = d2i_PKCS12_bio(bio, NULL);
-    if (!p12)
-    	RETVAL = 0;
-    BIO_free(bio);
-    if (RETVAL && !PKCS12_parse(p12, password, &private_key, &certificate, NULL))
-    	RETVAL = 0;
-    PKCS12_free(p12);
-    if (RETVAL && !SSL_CTX_use_PrivateKey(ctx, private_key))
-    	RETVAL = 0;
-    if (RETVAL && !SSL_CTX_use_certificate(ctx, certificate))
-    	RETVAL = 0;
-    if (!RETVAL)
-        ERR_print_errors_fp(stderr);
+void
+PEM_get_string_X509(x509)
+        X509 * x509
+     PREINIT:
+        BIO *bp;
+        int i, n;
+        char *buf;
+     CODE:
+        ST(0) = sv_newmortal(); /* undef to start with */
+        bp = BIO_new(BIO_s_mem());
+        if (bp && x509) {
+            PEM_write_bio_X509(bp,x509);
+            n = BIO_ctrl_pending(bp);
+            New(0, buf, n, char);
+            if (buf) {
+                i = BIO_read(bp,buf,n);
+                if (i>=0 && i<=n) sv_setpvn(ST(0), buf, i);
+                Safefree(buf);
+            }
+            BIO_free(bp);
+        }
+
+void
+PEM_get_string_X509_REQ(x509_req)
+        X509_REQ * x509_req
+    PREINIT:
+        BIO *bp;
+        int i, n;
+        char *buf;
+    CODE:
+        ST(0) = sv_newmortal(); /* undef to start with */
+        bp = BIO_new(BIO_s_mem());
+        if (bp && x509_req) {
+            PEM_write_bio_X509_REQ(bp,x509_req);
+            n = BIO_ctrl_pending(bp);
+            New(0, buf, n, char);
+            if (buf) {
+                i = BIO_read(bp,buf,n);
+                if (i>=0 && i<=n) sv_setpvn(ST(0), buf, i);
+                Safefree(buf);
+            }
+            BIO_free(bp);
+        }
+
+void
+PEM_get_string_X509_CRL(x509_crl)
+        X509_CRL * x509_crl
+    PREINIT:
+        BIO *bp;
+        int i, n;
+        char *buf;
+    CODE:
+        ST(0) = sv_newmortal(); /* undef to start with */
+        bp = BIO_new(BIO_s_mem());
+        if (bp && x509_crl) {
+            PEM_write_bio_X509_CRL(bp,x509_crl);
+            n = BIO_ctrl_pending(bp);
+            New(0, buf, n, char);
+            if (buf) {
+                i = BIO_read(bp,buf,n);
+                if (i>=0 && i<=n) sv_setpvn(ST(0), buf, i);
+                Safefree(buf);
+            }
+            BIO_free(bp);
+        }
+
+void
+PEM_get_string_PrivateKey(pk,passwd=NULL,enc_alg=NULL)
+        EVP_PKEY * pk
+        char * passwd
+        const EVP_CIPHER * enc_alg
+    PREINIT:
+        BIO *bp;
+        int i, n;
+        char *buf;
+        int passwd_len = 0;
+        pem_password_cb * cb = NULL;
+        void * u = NULL;
+    CODE:
+        ST(0) = sv_newmortal(); /* undef to start with */
+        bp = BIO_new(BIO_s_mem());
+        if (bp && pk) {
+            if (passwd) passwd_len = strlen(passwd);
+            if (passwd_len>0) {
+                /* encrypted key */
+                if (!enc_alg)
+                    PEM_write_bio_PrivateKey(bp,pk,EVP_des_cbc(),(unsigned char *)passwd,passwd_len,cb,u);
+                else
+                    PEM_write_bio_PrivateKey(bp,pk,enc_alg,(unsigned char *)passwd,passwd_len,cb,u);
+            }
+            else {
+                /* unencrypted key */
+                PEM_write_bio_PrivateKey(bp,pk,NULL,(unsigned char *)passwd,passwd_len,cb,u);
+            }
+            n = BIO_ctrl_pending(bp);
+            New(0, buf, n, char);
+            if (buf) {
+                i = BIO_read(bp,buf,n);
+                if (i>=0 && i<=n) sv_setpvn(ST(0), buf, i);
+                Safefree(buf);
+            }
+            BIO_free(bp);
+        }
+
+int
+CTX_use_PKCS12_file(ctx, file, password=NULL)
+        SSL_CTX *ctx
+        char *file
+        char *password
+    PREINIT:
+        PKCS12 *p12;
+        EVP_PKEY *private_key;
+        X509 *certificate;
+        FILE *fp;
+    CODE:
+        RETVAL = 0;
+        if ((fp = fopen (file, "rb"))) {
+#if OPENSSL_VERSION_NUMBER >= 0x0090700fL
+            OPENSSL_add_all_algorithms_noconf();
+#else
+            OpenSSL_add_all_algorithms();
+#endif
+            if ((p12 = d2i_PKCS12_fp(fp, NULL))) {
+                if (PKCS12_parse(p12, password, &private_key, &certificate, NULL)) {
+                    if (private_key) {
+                        if (SSL_CTX_use_PrivateKey(ctx, private_key)) RETVAL = 1;
+                        EVP_PKEY_free(private_key);
+                    }
+                    if (certificate) {
+                        if (SSL_CTX_use_certificate(ctx, certificate)) RETVAL = 1;
+                        X509_free(certificate);
+                    }
+                }
+                PKCS12_free(p12);
+            }
+            if (!RETVAL) ERR_print_errors_fp(stderr);
+            fclose(fp);
+        }
     OUTPUT:
-    RETVAL
+        RETVAL
+
+void
+P_PKCS12_load_file(file, load_chain=0, password=NULL)
+        char *file
+        int load_chain
+        char *password
+    PREINIT:
+        PKCS12 *p12;
+        EVP_PKEY *private_key = NULL;
+        X509 *certificate = NULL;
+        STACK_OF(X509) *cachain = NULL;
+        X509 *x;
+        FILE *fp;
+        int i, result;
+    PPCODE:
+        if ((fp = fopen (file, "rb"))) {
+#if OPENSSL_VERSION_NUMBER >= 0x0090700fL
+            OPENSSL_add_all_algorithms_noconf();
+#else
+            OpenSSL_add_all_algorithms();
+#endif
+            if ((p12 = d2i_PKCS12_fp(fp, NULL))) {
+                if(load_chain)
+                    result= PKCS12_parse(p12, password, &private_key, &certificate, &cachain);
+                else
+                    result= PKCS12_parse(p12, password, &private_key, &certificate, NULL);
+                if (result) {
+                    if (private_key)
+                        XPUSHs(sv_2mortal(newSViv(PTR2IV(private_key))));
+                    else
+                        XPUSHs(sv_2mortal(newSVpv(NULL,0))); /* undef */
+                    if (certificate)
+                        XPUSHs(sv_2mortal(newSViv(PTR2IV(certificate))));
+                    else
+                        XPUSHs(sv_2mortal(newSVpv(NULL,0))); /* undef */
+                    if (cachain) {
+                        for (i=0; i<sk_X509_num(cachain); i++) {
+                            x = sk_X509_value(cachain, i);
+                            XPUSHs(sv_2mortal(newSViv(PTR2IV(x))));
+                        }
+                        sk_X509_free(cachain);
+                    }
+                }
+                PKCS12_free(p12);
+            }
+            fclose(fp);
+        }
 
 #ifndef OPENSSL_NO_MD2
 
@@ -2250,7 +3136,7 @@ MD4(data)
 		XSRETURN_UNDEF;
 	}
 
-void 
+void
 MD5(data)
      PREINIT:
      STRLEN len;
@@ -2266,7 +3152,7 @@ MD5(data)
 
 #if OPENSSL_VERSION_NUMBER >= 0x00905000L
 
-void 
+void
 RIPEMD160(data)
      PREINIT:
      STRLEN len;
@@ -2284,7 +3170,7 @@ RIPEMD160(data)
 
 #if !defined(OPENSSL_NO_SHA)
 
-void 
+void
 SHA1(data)
      PREINIT:
      STRLEN len;
@@ -2301,7 +3187,7 @@ SHA1(data)
 #endif
 #if !defined(OPENSSL_NO_SHA256) && OPENSSL_VERSION_NUMBER >= 0x0090800fL
 
-void 
+void
 SHA256(data)
      PREINIT:
      STRLEN len;
@@ -2318,7 +3204,7 @@ SHA256(data)
 #endif
 #if !defined(OPENSSL_NO_SHA512) && OPENSSL_VERSION_NUMBER >= 0x0090800fL
 
-void 
+void
 SHA512(data)
      PREINIT:
      STRLEN len;
@@ -2334,7 +3220,7 @@ SHA512(data)
 
 #endif
 
-#ifndef OPENSSL_NO_SSL2 
+#ifndef OPENSSL_NO_SSL2
 #if OPENSSL_VERSION_NUMBER < 0x10000000L
 
 const SSL_METHOD *
@@ -2435,16 +3321,16 @@ int
 BIO_wpending(s)
      BIO *   s
 
-int 
+int
 BIO_ssl_copy_session_id(to,from)
      BIO *	to
      BIO *	from
 
-void 
+void
 BIO_ssl_shutdown(ssl_bio)
      BIO *	ssl_bio
 
-int 
+int
 SSL_add_client_CA(ssl,x)
      SSL *	ssl
      X509 *	x
@@ -2465,13 +3351,13 @@ const char *
 SSL_alert_type_string_long(value)
      int 	value
 
-long	
+long
 SSL_callback_ctrl(ssl,i,fp)
      SSL *  ssl
      int    i
      callback_no_ret * fp
 
-int 
+int
 SSL_check_private_key(ctx)
      SSL *	ctx
 
@@ -2500,7 +3386,7 @@ SSL_CIPHER_description(cipher,buf,size)
 const char *
 SSL_CIPHER_get_name(SSL_CIPHER *c)
 
-int	
+int
 SSL_CIPHER_get_bits(c,alg_bits=NULL)
      SSL_CIPHER *	c
      int *	alg_bits
@@ -2510,30 +3396,30 @@ SSL_CIPHER_get_bits(c,alg_bits=NULL)
 const char *
 SSL_CIPHER_get_name(const SSL_CIPHER *c)
 
-int	
+int
 SSL_CIPHER_get_bits(c,alg_bits=NULL)
      const SSL_CIPHER *	c
      int *	alg_bits
 
 #endif
 
-int 
+int
 SSL_COMP_add_compression_method(id,cm)
      int 	id
      COMP_METHOD *	cm
 
-int 
+int
 SSL_CTX_add_client_CA(ctx,x)
      SSL_CTX *	ctx
      X509 *	x
 
-long	
+long
 SSL_CTX_callback_ctrl(ctx,i,fp)
      SSL_CTX *  ctx
      int        i
      callback_no_ret * fp
 
-int 
+int
 SSL_CTX_check_private_key(ctx)
      SSL_CTX *	ctx
 
@@ -2542,23 +3428,23 @@ SSL_CTX_get_ex_data(ssl,idx)
      SSL_CTX *	ssl
      int 	idx
 
-int 
+int
 SSL_CTX_get_quiet_shutdown(ctx)
      SSL_CTX *	ctx
 
-long 
+long
 SSL_CTX_get_timeout(ctx)
      SSL_CTX *	ctx
 
-int 
+int
 SSL_CTX_get_verify_depth(ctx)
      SSL_CTX *	ctx
 
-int 
+int
 SSL_CTX_get_verify_mode(ctx)
      SSL_CTX *	ctx
 
-void 
+void
 SSL_CTX_set_cert_store(ctx,store)
      SSL_CTX *     ctx
      X509_STORE *  store
@@ -2567,75 +3453,77 @@ X509_STORE *
 SSL_CTX_get_cert_store(ctx)
      SSL_CTX *     ctx
 
-void 
-SSL_CTX_set_cert_verify_callback(ctx,func,data=NULL)
-	SSL_CTX* ctx
-	SV* func
-	SV*	data
-	PREINIT:
-	ssleay_ctx_cert_verify_cb_t* cb;
-	CODE:
-	if (func == NULL || func == &PL_sv_undef) {
-		ssleay_ctx_cert_verify_cb_free(ctx);
-		SSL_CTX_set_cert_verify_callback(ctx, NULL, NULL);
-	} else {
-		cb = ssleay_ctx_cert_verify_cb_new(ctx, func, data);
+void
+SSL_CTX_set_cert_verify_callback(ctx,callback,data=&PL_sv_undef)
+        SSL_CTX * ctx
+        SV * callback
+        SV * data
+    CODE: 
+        if (callback==NULL || !SvOK(callback)) {
+            SSL_CTX_set_cert_verify_callback(ctx, NULL, NULL);
+            cb_data_advanced_put(ctx, "ssleay_ctx_cert_verify_cb!!func", NULL);
+            cb_data_advanced_put(ctx, "ssleay_ctx_cert_verify_cb!!data", NULL);
+        }
+        else {
+            cb_data_advanced_put(ctx, "ssleay_ctx_cert_verify_cb!!func", newSVsv(callback));
+            cb_data_advanced_put(ctx, "ssleay_ctx_cert_verify_cb!!data", newSVsv(data));
 #if OPENSSL_VERSION_NUMBER >= 0x0090700fL
-		SSL_CTX_set_cert_verify_callback(ctx, ssleay_ctx_cert_verify_cb_invoke, cb);
+            SSL_CTX_set_cert_verify_callback(ctx, ssleay_ctx_cert_verify_cb_invoke, ctx);
 #else
-		SSL_CTX_set_cert_verify_callback(ctx, ssleay_ctx_cert_verify_cb_invoke, (char*)cb);
+            SSL_CTX_set_cert_verify_callback(ctx, ssleay_ctx_cert_verify_cb_invoke, (char*)ctx);
 #endif
-	}
+        }
 
 X509_NAME_STACK *
 SSL_CTX_get_client_CA_list(ctx)
 	SSL_CTX *ctx
 
-void 
+void
 SSL_CTX_set_client_CA_list(ctx,list)
      SSL_CTX *	ctx
      X509_NAME_STACK * list
 
-void 
-SSL_CTX_set_default_passwd_cb(ctx,func=NULL)
-	SSL_CTX *	ctx
-	SV * func
-	PREINIT:
-	ssleay_ctx_passwd_cb_t* cb;
-	CODE:
-	if (func == NULL || func == &PL_sv_undef) {
-		ssleay_ctx_passwd_cb_free_func(ctx);
-		SSL_CTX_set_default_passwd_cb(ctx, NULL);
-	} else {
-		cb = ssleay_ctx_passwd_cb_get(ctx);
-		ssleay_ctx_passwd_cb_func_set(ctx, func);
-		SSL_CTX_set_default_passwd_cb(ctx, &ssleay_ctx_passwd_cb_invoke);
-		SSL_CTX_set_default_passwd_cb_userdata(ctx, (void*)cb);
-	}
+void
+SSL_CTX_set_default_passwd_cb(ctx,callback=&PL_sv_undef)
+        SSL_CTX * ctx
+        SV * callback
+    CODE:
+        if (callback==NULL || !SvOK(callback)) {
+            SSL_CTX_set_default_passwd_cb(ctx, NULL);
+            SSL_CTX_set_default_passwd_cb_userdata(ctx, NULL);
+            cb_data_advanced_put(ctx, "ssleay_ctx_passwd_cb!!func", NULL);
+        }
+        else {
+            cb_data_advanced_put(ctx, "ssleay_ctx_passwd_cb!!func", newSVsv(callback));
+            SSL_CTX_set_default_passwd_cb_userdata(ctx, (void*)ctx);
+            SSL_CTX_set_default_passwd_cb(ctx, &ssleay_ctx_passwd_cb_invoke);
+        }
 
 void 
-SSL_CTX_set_default_passwd_cb_userdata(ctx,u=NULL)
-	SSL_CTX *	ctx
-	SV*	u
-	CODE:
-	if (u == NULL) {
-		ssleay_ctx_passwd_cb_free_userdata(ctx);
-	} else {
-		ssleay_ctx_passwd_cb_userdata_set(ctx, u);
-	}
+SSL_CTX_set_default_passwd_cb_userdata(ctx,data=&PL_sv_undef)
+        SSL_CTX * ctx
+        SV * data
+    CODE:
+        /* SSL_CTX_set_default_passwd_cb_userdata is set in SSL_CTX_set_default_passwd_cb */
+        if (data==NULL || !SvOK(data)) {
+            cb_data_advanced_put(ctx, "ssleay_ctx_passwd_cb!!data", NULL);
+        }
+        else {
+            cb_data_advanced_put(ctx, "ssleay_ctx_passwd_cb!!data", newSVsv(data));
+        }
 
-int 
+int
 SSL_CTX_set_ex_data(ssl,idx,data)
      SSL_CTX *	ssl
      int 	idx
      void *	data
 
-int 
+int
 SSL_CTX_set_purpose(s,purpose)
      SSL_CTX *	s
      int 	purpose
 
-void 
+void
 SSL_CTX_set_quiet_shutdown(ctx,mode)
      SSL_CTX *	ctx
      int 	mode
@@ -2649,49 +3537,49 @@ SSL_CTX_set_ssl_version(ctx,meth)
 
 #else
 
-int 
+int
 SSL_CTX_set_ssl_version(ctx,meth)
      SSL_CTX *	ctx
      const SSL_METHOD *	meth
 
 #endif
 
-long 
+long
 SSL_CTX_set_timeout(ctx,t)
      SSL_CTX *	ctx
      long 	t
 
-int 
+int
 SSL_CTX_set_trust(s,trust)
      SSL_CTX *	s
      int 	trust
 
-void 
+void
 SSL_CTX_set_verify_depth(ctx,depth)
      SSL_CTX *	ctx
      int 	depth
 
-int 
+int
 SSL_CTX_use_certificate(ctx,x)
      SSL_CTX *	ctx
      X509 *	x
 
-int	
+int
 SSL_CTX_use_certificate_chain_file(ctx,file)
      SSL_CTX *	ctx
      const char * file
 
-int 
+int
 SSL_CTX_use_PrivateKey(ctx,pkey)
      SSL_CTX *	ctx
      EVP_PKEY *	pkey
 
-int 
+int
 SSL_CTX_use_RSAPrivateKey(ctx,rsa)
      SSL_CTX *	ctx
      RSA *	rsa
 
-int 
+int
 SSL_do_handshake(s)
      SSL *	s
 
@@ -2703,7 +3591,7 @@ const SSL_CIPHER *
 SSL_get_current_cipher(s)
      SSL *	s
 
-long 
+long
 SSL_get_default_timeout(s)
      SSL *	s
 
@@ -2712,45 +3600,45 @@ SSL_get_ex_data(ssl,idx)
      SSL *	ssl
      int 	idx
 
-size_t 
+size_t
 SSL_get_finished(s,buf,count)
      SSL *	s
      void *	buf
      size_t 	count
 
-size_t 
+size_t
 SSL_get_peer_finished(s,buf,count)
      SSL *	s
      void *	buf
      size_t 	count
 
-int 
+int
 SSL_get_quiet_shutdown(ssl)
      SSL *	ssl
 
-int 
+int
 SSL_get_shutdown(ssl)
      SSL *	ssl
 
-int	
+int
 SSL_get_verify_depth(s)
      SSL *	s
 
-int	
+int
 SSL_get_verify_mode(s)
      SSL *	s
 
-long 
+long
 SSL_get_verify_result(ssl)
      SSL *	ssl
 
-int 
+int
 SSL_renegotiate(s)
      SSL *	s
 
 #if OPENSSL_VERSION_NUMBER < 0x10000000L
 
-int	
+int
 SSL_SESSION_cmp(a,b)
      SSL_SESSION *	a
      SSL_SESSION *	b
@@ -2762,36 +3650,36 @@ SSL_SESSION_get_ex_data(ss,idx)
      SSL_SESSION *	ss
      int 	idx
 
-long	
+long
 SSL_SESSION_get_time(s)
      SSL_SESSION *	s
 
-long	
+long
 SSL_SESSION_get_timeout(s)
      SSL_SESSION *	s
 
-int	
+int
 SSL_SESSION_print_fp(fp,ses)
      FILE *	fp
      SSL_SESSION *	ses
 
-int 
+int
 SSL_SESSION_set_ex_data(ss,idx,data)
      SSL_SESSION *	ss
      int 	idx
      void *	data
 
-long	
+long
 SSL_SESSION_set_time(s,t)
      SSL_SESSION *	s
      long 	t
 
-long	
+long
 SSL_SESSION_set_timeout(s,t)
      SSL_SESSION *	s
      long 	t
 
-void 
+void
 SSL_set_accept_state(s)
      SSL *	s
 
@@ -2812,42 +3700,42 @@ X509_NAME_STACK *
 SSL_get_client_CA_list(s)
 	SSL *	s
 
-void 
+void
 SSL_set_client_CA_list(s,list)
      SSL *	s
      X509_NAME_STACK *  list
 
-void 
+void
 SSL_set_connect_state(s)
      SSL *	s
 
-int 
+int
 SSL_set_ex_data(ssl,idx,data)
      SSL *	ssl
      int 	idx
      void *	data
 
-void 
+void
 SSL_set_info_callback(ssl,cb)
      SSL *	ssl
      cb_ssl_int_int_ret_void *  cb
 
-int 
+int
 SSL_set_purpose(s,purpose)
      SSL *	s
      int 	purpose
 
-void 
+void
 SSL_set_quiet_shutdown(ssl,mode)
      SSL *	ssl
      int 	mode
 
-void 
+void
 SSL_set_shutdown(ssl,mode)
      SSL *	ssl
      int 	mode
 
-int 
+int
 SSL_set_trust(s,trust)
      SSL *	s
      int 	trust
@@ -2857,16 +3745,16 @@ SSL_set_verify_depth(s,depth)
      SSL *	s
      int 	depth
 
-void 
+void
 SSL_set_verify_result(ssl,v)
      SSL *	ssl
      long 	v
 
-int 
+int
 SSL_shutdown(s)
      SSL *	s
 
-int 
+int
 SSL_version(ssl)
      SSL *	ssl
 
@@ -2876,7 +3764,7 @@ X509_NAME_STACK *
 SSL_load_client_CA_file(file)
      const char * file
 
-int	
+int
 SSL_add_file_cert_subjects_to_stack(stackCAs,file)
      X509_NAME_STACK * stackCAs
      const char * file
@@ -2960,7 +3848,7 @@ SSL_clear_num_renegotiations(ssl)
   OUTPUT:
   RETVAL
 
-long	
+long
 SSL_CTX_add_extra_chain_cert(ctx,x509)
      SSL_CTX *	ctx
      X509 *     x509
@@ -2977,7 +3865,7 @@ SSL_CTX_get_app_data(ctx)
   OUTPUT:
   RETVAL
 
-long	
+long
 SSL_CTX_get_mode(ctx)
      SSL_CTX *	ctx
   CODE:
@@ -2985,7 +3873,7 @@ SSL_CTX_get_mode(ctx)
   OUTPUT:
   RETVAL
 
-long	
+long
 SSL_CTX_get_read_ahead(ctx)
      SSL_CTX *	ctx
   CODE:
@@ -2993,7 +3881,7 @@ SSL_CTX_get_read_ahead(ctx)
   OUTPUT:
   RETVAL
 
-long	
+long
 SSL_CTX_get_session_cache_mode(ctx)
      SSL_CTX *	ctx
   CODE:
@@ -3001,7 +3889,7 @@ SSL_CTX_get_session_cache_mode(ctx)
   OUTPUT:
   RETVAL
 
-long	
+long
 SSL_CTX_need_tmp_RSA(ctx)
      SSL_CTX *	ctx
   CODE:
@@ -3009,7 +3897,7 @@ SSL_CTX_need_tmp_RSA(ctx)
   OUTPUT:
   RETVAL
 
-int 
+int
 SSL_CTX_set_app_data(ctx,arg)
      SSL_CTX *	ctx
      char *	arg
@@ -3018,7 +3906,7 @@ SSL_CTX_set_app_data(ctx,arg)
   OUTPUT:
   RETVAL
 
-long	
+long
 SSL_CTX_set_mode(ctx,op)
      SSL_CTX *	ctx
      long 	op
@@ -3027,7 +3915,7 @@ SSL_CTX_set_mode(ctx,op)
   OUTPUT:
   RETVAL
 
-long	
+long
 SSL_CTX_set_read_ahead(ctx,m)
      SSL_CTX *	ctx
      long 	m
@@ -3036,7 +3924,7 @@ SSL_CTX_set_read_ahead(ctx,m)
   OUTPUT:
   RETVAL
 
-long	
+long
 SSL_CTX_set_session_cache_mode(ctx,m)
      SSL_CTX *	ctx
      long 	m
@@ -3045,12 +3933,12 @@ SSL_CTX_set_session_cache_mode(ctx,m)
   OUTPUT:
   RETVAL
 
-long	
+long
 SSL_CTX_set_tmp_dh(ctx,dh)
      SSL_CTX *	ctx
      DH *	dh
 
-long	
+long
 SSL_CTX_set_tmp_rsa(ctx,rsa)
      SSL_CTX *	ctx
      RSA *	rsa
@@ -3063,7 +3951,7 @@ SSL_get_app_data(s)
   OUTPUT:
   RETVAL
 
-int	
+int
 SSL_get_cipher_bits(s,np=NULL)
      SSL *	s
      int *	np
@@ -3072,7 +3960,7 @@ SSL_get_cipher_bits(s,np=NULL)
   OUTPUT:
   RETVAL
 
-long	
+long
 SSL_get_mode(ssl)
      SSL *	ssl
   CODE:
@@ -3080,7 +3968,7 @@ SSL_get_mode(ssl)
   OUTPUT:
   RETVAL
 
-int 
+int
 SSL_get_state(ssl)
      SSL *	ssl
   CODE:
@@ -3088,7 +3976,7 @@ SSL_get_state(ssl)
   OUTPUT:
   RETVAL
 
-long	
+long
 SSL_need_tmp_RSA(ssl)
      SSL *	ssl
   CODE:
@@ -3096,7 +3984,7 @@ SSL_need_tmp_RSA(ssl)
   OUTPUT:
   RETVAL
 
-long	
+long
 SSL_num_renegotiations(ssl)
      SSL *	ssl
   CODE:
@@ -3112,7 +4000,7 @@ SSL_SESSION_get_app_data(ses)
   OUTPUT:
   RETVAL
 
-long	
+long
 SSL_session_reused(ssl)
      SSL *	ssl
   CODE:
@@ -3120,7 +4008,7 @@ SSL_session_reused(ssl)
   OUTPUT:
   RETVAL
 
-int 
+int
 SSL_SESSION_set_app_data(s,a)
      SSL_SESSION *	s
      void *	a
@@ -3129,7 +4017,7 @@ SSL_SESSION_set_app_data(s,a)
   OUTPUT:
   RETVAL
 
-int 
+int
 SSL_set_app_data(s,arg)
      SSL *	s
      void *	arg
@@ -3138,7 +4026,7 @@ SSL_set_app_data(s,arg)
   OUTPUT:
   RETVAL
 
-long	
+long
 SSL_set_mode(ssl,op)
      SSL *	ssl
      long 	op
@@ -3147,7 +4035,7 @@ SSL_set_mode(ssl,op)
   OUTPUT:
   RETVAL
 
-int	
+int
 SSL_set_pref_cipher(s,n)
      SSL *	s
      const char * n
@@ -3156,12 +4044,12 @@ SSL_set_pref_cipher(s,n)
   OUTPUT:
   RETVAL
 
-long	
+long
 SSL_set_tmp_dh(ssl,dh)
      SSL *	ssl
      DH *	dh
 
-long	
+long
 SSL_set_tmp_rsa(ssl,rsa)
      SSL *	ssl
      char *	rsa
@@ -3171,27 +4059,39 @@ SSL_set_tmp_rsa(ssl,rsa)
   RETVAL
 
 RSA *
-RSA_generate_key(bits,e,perl_cb=NULL,perl_cb_arg=NULL)
-		int bits
-		unsigned long e
-		SV* perl_cb
-		SV* perl_cb_arg
-	PREINIT:
-		ssleay_RSA_generate_key_cb_t* cb = NULL;
-	CODE:
-		cb = ssleay_RSA_generate_key_cb_new(perl_cb, perl_cb_arg);
-		RETVAL = RSA_generate_key(bits, e, ssleay_RSA_generate_key_cb_invoke, cb);
-		ssleay_RSA_generate_key_cb_free(cb);
-	OUTPUT:
-		RETVAL
+RSA_generate_key(bits,e,perl_cb=&PL_sv_undef,perl_data=&PL_sv_undef)
+        int bits
+        unsigned long e
+        SV* perl_cb
+        SV* perl_data
+    PREINIT:
+        simple_cb_data_t* cb = NULL;
+    CODE:
+        cb = simple_cb_data_new(perl_cb, perl_data);
+        RETVAL = RSA_generate_key(bits, e, ssleay_RSA_generate_key_cb_invoke, cb);
+        simple_cb_data_free(cb);
+    OUTPUT:
+        RETVAL
 
 void
 RSA_free(r)
     RSA * r
 
+X509 *
+X509_new()
+
 void
 X509_free(a)
     X509 * a
+
+X509_CRL *
+d2i_X509_CRL_bio(BIO *bp,void *unused=NULL)
+
+X509_REQ *
+d2i_X509_REQ_bio(BIO *bp,void *unused=NULL)
+
+X509 *
+d2i_X509_bio(BIO *bp,void *unused=NULL)
 
 DH *
 PEM_read_bio_DHparams(bio,x=NULL,cb=NULL,u=NULL)
@@ -3206,6 +4106,38 @@ PEM_read_bio_X509_CRL(bio,x=NULL,cb=NULL,u=NULL)
 	void * x
 	pem_password_cb * cb
 	void * u
+
+X509 *
+PEM_read_bio_X509(BIO *bio,void *x=NULL,void *cb=NULL,void *u=NULL)
+
+X509_REQ *
+PEM_read_bio_X509_REQ(BIO *bio,void *x=NULL,pem_password_cb *cb=NULL,void *u=NULL)
+
+EVP_PKEY *
+PEM_read_bio_PrivateKey(bio,perl_cb=&PL_sv_undef,perl_data=&PL_sv_undef)
+        BIO *bio
+        SV* perl_cb
+        SV* perl_data
+    PREINIT:
+        simple_cb_data_t* cb = NULL;
+    CODE:
+        RETVAL = 0;
+        if (SvOK(perl_cb)) {
+            /* setup our callback */
+            cb = simple_cb_data_new(perl_cb, perl_data);
+            RETVAL = PEM_read_bio_PrivateKey(bio, NULL, pem_password_cb_invoke, (void*)cb);
+            simple_cb_data_free(cb);
+        }
+        else if (!SvOK(perl_cb) && SvOK(perl_data) && SvPOK(perl_data)) {
+            /* use perl_data as the password */
+            RETVAL = PEM_read_bio_PrivateKey(bio, NULL, NULL, SvPVX(perl_data));
+        }
+        else if (!SvOK(perl_cb) && !SvOK(perl_data)) {
+            /* will trigger default password callback */
+            RETVAL = PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL);
+        }
+    OUTPUT:
+        RETVAL
 
 void
 DH_free(dh)
@@ -3253,7 +4185,7 @@ SSL_get_server_random(s)
 
 int
 SSL_get_keyblock_size(s)
-     SSL *   s	
+     SSL *   s
      CODE:
      if (s == NULL ||
 	 s->enc_read_ctx == NULL ||
@@ -3301,22 +4233,23 @@ SSL_set_hello_extension(s, type, data)
 #if defined(SSL_F_SSL_SET_HELLO_EXTENSION) || defined(SSL_F_SSL_SET_SESSION_TICKET_EXT)
 
 void 
-SSL_set_session_secret_cb(s,func,data=NULL)
-	SSL * s
-	SV* func
-	SV*	data
-	PREINIT:
-	ssleay_session_secret_cb_t* cb;
-	CODE:
-	if (func == NULL || func == &PL_sv_undef) {
-		ssleay_session_secret_cb_free(s);
-		SSL_set_session_secret_cb(s, NULL, NULL);
-	} else {
-		cb = ssleay_session_secret_cb_new(s, func, data);
-		SSL_set_session_secret_cb(s, (int (*)(SSL *s, void *secret, int *secret_len,
-			   STACK_OF(SSL_CIPHER) *peer_ciphers,
-			   SSL_CIPHER **cipher, void *arg))&ssleay_session_secret_cb_invoke, cb);
-	}
+SSL_set_session_secret_cb(s,callback=&PL_sv_undef,data=&PL_sv_undef)
+        SSL * s
+        SV * callback
+        SV * data
+    CODE:
+        if (callback==NULL || !SvOK(callback)) {
+            SSL_set_session_secret_cb(s, NULL, NULL);
+            cb_data_advanced_put(s, "ssleay_session_secret_cb!!func", NULL);
+            cb_data_advanced_put(s, "ssleay_session_secret_cb!!data", NULL);
+        }
+        else {
+            cb_data_advanced_put(s, "ssleay_session_secret_cb!!func", newSVsv(callback));
+            cb_data_advanced_put(s, "ssleay_session_secret_cb!!data", newSVsv(data));
+            SSL_set_session_secret_cb(s, (int (*)(SSL *s, void *secret, int *secret_len,
+                STACK_OF(SSL_CIPHER) *peer_ciphers,
+                SSL_CIPHER **cipher, void *arg))&ssleay_session_secret_cb_invoke, s);
+        }
 
 #endif
 
@@ -3358,7 +4291,7 @@ int EVP_MD_size(const EVP_MD *md)
 
 SV*
 P_EVP_MD_list_all()
-    INIT:        
+    INIT:
         AV * results;
     CODE:
         results = (AV *)sv_2mortal((SV *)newAV());
@@ -3391,7 +4324,7 @@ EVP_DigestUpdate(ctx,data)
      unsigned char *data = (unsigned char *) SvPV(ST(1), len);
      CODE:
      XSRETURN_IV(EVP_DigestUpdate(ctx,data,len));
-     
+
 void
 EVP_DigestFinal(ctx)
      EVP_MD_CTX *ctx
@@ -3434,6 +4367,22 @@ EVP_Digest(...)
 
 #endif
 
+const EVP_CIPHER *
+EVP_get_cipherbyname(const char *name)
+
+void
+OpenSSL_add_all_algorithms()
+
+#if OPENSSL_VERSION_NUMBER >= 0x0090700fL
+
+void
+OPENSSL_add_all_algorithms_noconf()
+
+void
+OPENSSL_add_all_algorithms_conf()
+
+#endif
+
 #if OPENSSL_VERSION_NUMBER >= 0x10000000L
 
 int
@@ -3453,7 +4402,7 @@ SSL_set1_param(ctx, vpm)
 X509_VERIFY_PARAM *
 X509_VERIFY_PARAM_new()
 
-void 
+void
 X509_VERIFY_PARAM_free(param)
      X509_VERIFY_PARAM *param
 
@@ -3472,7 +4421,7 @@ X509_VERIFY_PARAM_set1_name(param, name)
      X509_VERIFY_PARAM *param
      const char *name
 
-int 
+int
 X509_VERIFY_PARAM_set_flags(param, flags)
     X509_VERIFY_PARAM *param
     unsigned long flags
@@ -3480,52 +4429,52 @@ X509_VERIFY_PARAM_set_flags(param, flags)
 #if OPENSSL_VERSION_NUMBER >= 0x0090801fL
 #define REM13 "NOTE: requires 0.9.8a+"
 
-int 
+int
 X509_VERIFY_PARAM_clear_flags(param, flags)
     X509_VERIFY_PARAM *param
     unsigned long flags
 
-unsigned long 
+unsigned long
 X509_VERIFY_PARAM_get_flags(param)
      X509_VERIFY_PARAM *param
 
 #endif
 
-int 
+int
 X509_VERIFY_PARAM_set_purpose(param, purpose)
     X509_VERIFY_PARAM *param
     int purpose
 
-int 
+int
 X509_VERIFY_PARAM_set_trust(param, trust)
     X509_VERIFY_PARAM *param
     int trust
 
-void 
+void
 X509_VERIFY_PARAM_set_depth(param, depth)
     X509_VERIFY_PARAM *param
     int depth
 
-void 
+void
 X509_VERIFY_PARAM_set_time(param, t)
     X509_VERIFY_PARAM *param
     time_t t
 
-int 
+int
 X509_VERIFY_PARAM_add0_policy(param, policy)
     X509_VERIFY_PARAM *param
     ASN1_OBJECT *policy
 
-int 
+int
 X509_VERIFY_PARAM_set1_policies(param, policies)
     X509_VERIFY_PARAM *param
     STACK_OF(ASN1_OBJECT) *policies
 
-int 
+int
 X509_VERIFY_PARAM_get_depth(param)
     X509_VERIFY_PARAM *param
 
-int 
+int
 X509_VERIFY_PARAM_add0_table(param)
     X509_VERIFY_PARAM *param
 
@@ -3533,14 +4482,14 @@ const X509_VERIFY_PARAM *
 X509_VERIFY_PARAM_lookup(name)
     const char *name
 
-void 
+void
 X509_VERIFY_PARAM_table_cleanup()
 
-void 
+void
 X509_policy_tree_free(tree)
     X509_POLICY_TREE *tree
 
-int 
+int
 X509_policy_tree_level_count(tree)
     X509_POLICY_TREE *tree
 
@@ -3557,7 +4506,7 @@ STACK_OF(X509_POLICY_NODE) *
 X509_policy_tree_get0_user_policies(tree)
     X509_POLICY_TREE *tree
 
-int 
+int
 X509_policy_level_node_count(level)
     X509_POLICY_LEVEL *level
 
@@ -3580,38 +4529,38 @@ X509_policy_node_get0_parent(node)
 
 #endif
 
-ASN1_OBJECT *	
+ASN1_OBJECT *
 OBJ_dup(o)
     ASN1_OBJECT *o
 
-ASN1_OBJECT *	
+ASN1_OBJECT *
 OBJ_nid2obj(n)
     int n
 
-const char *	
+const char *
 OBJ_nid2ln(n)
     int n
 
-const char *	
+const char *
 OBJ_nid2sn(n)
     int n
 
-int		
+int
 OBJ_obj2nid(o)
     ASN1_OBJECT *o
 
-ASN1_OBJECT *	
-OBJ_txt2obj(s, no_name)
+ASN1_OBJECT *
+OBJ_txt2obj(s, no_name=0)
     const char *s
     int no_name
 
 void
-OBJ_obj2txt(a, no_name)
+OBJ_obj2txt(a, no_name=0)
     ASN1_OBJECT *a
     int no_name
     PREINIT:
-	char buf[100];
-	int  len;
+    char buf[100]; /* openssl doc: a buffer length of 80 should be more than enough to handle any OID encountered in practice */
+    int  len;
     CODE:
     len = OBJ_obj2txt(buf, sizeof(buf), a, no_name);
     ST(0) = sv_newmortal();
@@ -3620,29 +4569,203 @@ OBJ_obj2txt(a, no_name)
 #if OPENSSL_VERSION_NUMBER < 0x0090700fL
 #define REM14 "NOTE: before 0.9.7"
 
-int		
+int
 OBJ_txt2nid(s)
     char *s
 
 #else
 
-int		
+int
 OBJ_txt2nid(s)
     const char *s
 
 #endif
 
-int		
+int
 OBJ_ln2nid(s)
     const char *s
 
-int		
+int
 OBJ_sn2nid(s)
     const char *s
 
-int		
+int
 OBJ_cmp(a, b)
     ASN1_OBJECT *a
     ASN1_OBJECT *b
+
+#if OPENSSL_VERSION_NUMBER >= 0x0090700fL
+
+void
+X509_pubkey_digest(data,type)
+        const X509 *data
+        const EVP_MD *type
+    PREINIT:
+        unsigned char md[EVP_MAX_MD_SIZE];
+        unsigned int md_size;
+    PPCODE:
+        if (X509_pubkey_digest(data,type,md,&md_size))
+            XSRETURN_PVN((char *)md, md_size);
+        else
+            XSRETURN_UNDEF;
+
+#endif
+
+void
+X509_digest(data,type)
+        const X509 *data
+        const EVP_MD *type
+    PREINIT:
+        unsigned char md[EVP_MAX_MD_SIZE];
+        unsigned int md_size;
+    PPCODE:
+        if (X509_digest(data,type,md,&md_size))
+            XSRETURN_PVN((char *)md, md_size);
+        XSRETURN_UNDEF;
+
+void
+X509_CRL_digest(data,type)
+        const X509_CRL *data
+        const EVP_MD *type
+    PREINIT:
+        unsigned char md[EVP_MAX_MD_SIZE];
+        unsigned int md_size;
+    PPCODE:
+        if (X509_CRL_digest(data,type,md,&md_size))
+            XSRETURN_PVN((char *)md, md_size);
+        XSRETURN_UNDEF;
+
+void
+X509_REQ_digest(data,type)
+        const X509_REQ *data
+        const EVP_MD *type
+    PREINIT:
+        unsigned char md[EVP_MAX_MD_SIZE];
+        unsigned int md_size;
+    PPCODE:
+        if (X509_REQ_digest(data,type,md,&md_size))
+            XSRETURN_PVN((char *)md, md_size);
+        XSRETURN_UNDEF;
+
+void
+X509_NAME_digest(data,type)
+        const X509_NAME *data
+        const EVP_MD *type
+    PREINIT:
+        unsigned char md[EVP_MAX_MD_SIZE];
+        unsigned int md_size;
+    PPCODE:
+        if (X509_NAME_digest(data,type,md,&md_size))
+            XSRETURN_PVN((char *)md, md_size);
+        XSRETURN_UNDEF;
+
+unsigned long
+X509_subject_name_hash(X509 *x)
+
+unsigned long
+X509_issuer_name_hash(X509 *a)
+
+unsigned long
+X509_issuer_and_serial_hash(X509 *a)
+
+ASN1_OBJECT *
+P_X509_get_signature_alg(x)
+        X509 * x
+    CODE:
+        RETVAL = (x->cert_info->signature->algorithm);
+    OUTPUT:
+        RETVAL
+
+ASN1_OBJECT *
+P_X509_get_pubkey_alg(x)
+        X509 * x
+    CODE:
+        RETVAL = (x->cert_info->key->algor->algorithm);
+    OUTPUT:
+        RETVAL
+
+#if OPENSSL_VERSION_NUMBER >= 0x10001000L && !defined(OPENSSL_NO_NEXTPROTONEG)
+
+int
+SSL_CTX_set_next_protos_advertised_cb(ctx,callback,data=&PL_sv_undef)
+        SSL_CTX * ctx
+        SV * callback
+        SV * data
+    CODE:
+        RETVAL = 1;
+        if (callback==NULL || !SvOK(callback)) {
+            SSL_CTX_set_next_protos_advertised_cb(ctx, NULL, NULL);
+            cb_data_advanced_put(ctx, "next_protos_advertised_cb!!func", NULL);
+            cb_data_advanced_put(ctx, "next_protos_advertised_cb!!data", NULL);
+            PR1("SSL_CTX_set_next_protos_advertised_cb - undef\n");
+        }
+        else if (SvROK(callback) && (SvTYPE(SvRV(callback)) == SVt_PVAV)) {
+            /* callback param array ref like ['proto1','proto2'] */
+            cb_data_advanced_put(ctx, "next_protos_advertised_cb!!func", NULL);
+            cb_data_advanced_put(ctx, "next_protos_advertised_cb!!data", newSVsv(callback));
+            SSL_CTX_set_next_protos_advertised_cb(ctx, next_protos_advertised_cb_invoke, ctx);
+            PR2("SSL_CTX_set_next_protos_advertised_cb - simple ctx=%p\n",ctx);
+        }
+        else if (SvROK(callback) && (SvTYPE(SvRV(callback)) == SVt_PVCV)) {
+            cb_data_advanced_put(ctx, "next_protos_advertised_cb!!func", newSVsv(callback));
+            cb_data_advanced_put(ctx, "next_protos_advertised_cb!!data", newSVsv(data));
+            SSL_CTX_set_next_protos_advertised_cb(ctx, next_protos_advertised_cb_invoke, ctx);
+            PR2("SSL_CTX_set_next_protos_advertised_cb - advanced ctx=%p\n",ctx);
+        }
+        else {
+            RETVAL = 0;
+        }
+    OUTPUT:
+        RETVAL
+
+int
+SSL_CTX_set_next_proto_select_cb(ctx,callback,data=&PL_sv_undef)
+        SSL_CTX * ctx
+        SV * callback
+        SV * data
+    CODE: 
+        RETVAL = 1;
+        if (callback==NULL || !SvOK(callback)) {
+            SSL_CTX_set_next_proto_select_cb(ctx, NULL, NULL);
+            cb_data_advanced_put(ctx, "next_proto_select_cb!!func", NULL);
+            cb_data_advanced_put(ctx, "next_proto_select_cb!!data", NULL);
+            PR1("SSL_CTX_set_next_proto_select_cb - undef\n");
+        }
+        else if (SvROK(callback) && (SvTYPE(SvRV(callback)) == SVt_PVAV)) {
+            /* callback param array ref like ['proto1','proto2'] */
+            cb_data_advanced_put(ctx, "next_proto_select_cb!!func", NULL);
+            cb_data_advanced_put(ctx, "next_proto_select_cb!!data", newSVsv(callback));
+            SSL_CTX_set_next_proto_select_cb(ctx, next_proto_select_cb_invoke, ctx);
+            PR2("SSL_CTX_set_next_proto_select_cb - simple ctx=%p\n",ctx);
+        }
+        else if (SvROK(callback) && (SvTYPE(SvRV(callback)) == SVt_PVCV)) {
+            cb_data_advanced_put(ctx, "next_proto_select_cb!!func", newSVsv(callback));
+            cb_data_advanced_put(ctx, "next_proto_select_cb!!data", newSVsv(data));
+            SSL_CTX_set_next_proto_select_cb(ctx, next_proto_select_cb_invoke, ctx);
+            PR2("SSL_CTX_set_next_proto_select_cb - advanced ctx=%p\n",ctx);
+        }
+        else {
+            RETVAL = 0;
+        }
+    OUTPUT:
+        RETVAL
+
+void
+P_next_proto_negotiated(s)
+        const SSL *s
+    PREINIT:
+        const unsigned char *data;
+        unsigned int len;
+    PPCODE:
+        SSL_get0_next_proto_negotiated(s, &data, &len);
+        XPUSHs(sv_2mortal(newSVpv(data, len)));
+
+void
+P_next_proto_last_status(s)
+        const SSL *s
+    PPCODE:
+        XPUSHs(sv_2mortal(newSVsv(cb_data_advanced_get((void*)s, "next_proto_select_cb!!last_status"))));
+
+#endif
 
 #define REM_EOF "/* EOF - SSLeay.xs */"

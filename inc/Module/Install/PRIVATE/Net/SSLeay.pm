@@ -39,12 +39,12 @@ EOM
     $self->check_openssl_version($prefix, $exec);
     my $opts = $self->ssleay_get_build_opts($prefix, $exec);
 
-    $self->cc_inc_paths(      @{ $opts->{inc_paths} } );
-    $self->cc_lib_paths(      @{ $opts->{lib_paths} } );
-    $self->cc_lib_links(      @{ $opts->{lib_links} } );
-    $self->cc_optimize_flags(    $opts->{optimize}    );
-
-    $self->makemaker_args( CCCDLFLAGS => $opts->{cccdlflags} );
+    $self->makemaker_args(
+        CCCDLFLAGS => $opts->{cccdlflags},
+        OPTIMIZE => $opts->{optimize},
+        INC => join(' ', map {"-I$_"} @{$opts->{inc_paths}}),
+        LIBS => join(' ', (map {"-L$_"} @{$opts->{lib_paths}}), (map {"-l$_"} @{$opts->{lib_links}})),
+    );
 
     if ( $self->prompt(
             "Do you want to run external tests?\n".
@@ -61,11 +61,15 @@ sub ssleay_get_build_opts {
     my ($self, $prefix, $exec) = @_;
 
     my $opts = {
-        inc_paths  => ["$prefix/include", "$prefix/inc32", '/usr/kerberos/include'],
-        lib_paths  => [$prefix, "$prefix/lib", "$prefix/out32dll"],
         lib_links  => [],
         cccdlflags => '',
     };
+    for ("$prefix/include", "$prefix/inc32", '/usr/kerberos/include') {
+      push @{$opts->{inc_paths}}, $_ if -f "$_/openssl/ssl.h";
+    }
+    for ($prefix, "$prefix/lib", "$prefix/out32dll") {
+      push @{$opts->{lib_paths}}, $_ if -d $_;
+    }
 
     my $rsaref  = $self->ssleay_is_rsaref;
 
@@ -76,22 +80,37 @@ EOM
 
     if ($^O eq 'MSWin32') {
         print "*** RSAREF build on Windows not supported out of box" if $rsaref;
-	if ($win_link_statically)
-	{
-	    # Link to static libs
-	    push @{ $opts->{lib_paths} }, "$prefix/lib/VC/static";
-	}
-	else
-	{
-	    push @{ $opts->{lib_paths} }, "$prefix/lib/VC";
-	}
-	# Library names depend on the compiler. We expect either 
-	# libeay32MD and ssleay32MD or
-	# libeay32 and ssleay32.
-	# This construction will not complain as long as it find at least one
-	# libssl32.a is made by openssl onWin21 with the ms/minw32.bat builder
-	push @{ $opts->{lib_links} }, qw( libeay32MD ssleay32MD libeay32 ssleay32 libssl32);
-    } else {
+        if ($win_link_statically) {
+            # Link to static libs
+            push @{ $opts->{lib_paths} }, "$prefix/lib/VC/static" if -d "$prefix/lib/VC/static";
+        }
+        else {
+            push @{ $opts->{lib_paths} }, "$prefix/lib/VC" if -d "$prefix/lib/VC";
+        }
+
+        my $found = 0;
+        my @pairs = ();
+        # Library names depend on the compiler
+        @pairs = (['eay32','ssl32'],['crypto.dll','ssl.dll'],['crypto','ssl']) if $Config{cc} =~ /gcc/;
+        @pairs = (['libeay32','ssleay32'],['libeay32MD','ssleay32MD'],['libeay32MT','ssleay32MT']) if $Config{cc} =~ /cl/;
+        for my $dir (@{$opts->{lib_paths}}) {
+          for my $p (@pairs) {
+            my ($s_lib_found, $s_lib_found);
+            $found = 1 if $Config{cc} =~ /gcc/ && -f "$dir/lib$p->[0].a" && -f "$dir/lib$p->[1].a";
+            $found = 1 if $Config{cc} =~ /cl/ && -f "$dir/$p->[0].lib" && -f "$dir/$p->[1].lib";
+            if ($found) {
+              $opts->{lib_links} = [$p->[0], $p->[1]];
+              $opts->{lib_paths} = [$dir];
+              last;
+            }
+          }
+        }
+        if (!$found) {
+          #fallback to the old behaviour
+          push @{ $opts->{lib_links} }, qw( libeay32MD ssleay32MD libeay32 ssleay32 libssl32);
+        }
+    }
+    else {
         $opts->{optimize} = '-O2 -g';
         push @{ $opts->{lib_links} },
              ($rsaref
@@ -151,7 +170,7 @@ sub find_openssl_prefix {
             '/usr/local/ssl/bin/openssl'     => '/usr/local/ssl',
             '/usr/local/openssl/bin/openssl' => '/usr/local/openssl',
             '/apps/openssl/std/bin/openssl'  => '/apps/openssl/std',
-	    '/usr/sfw/bin/openssl'           => '/usr/sfw', # Open Solaris
+            '/usr/sfw/bin/openssl'           => '/usr/sfw', # Open Solaris
             'C:\OpenSSL\bin\openssl.exe'     => 'C:\OpenSSL',
             $Config{prefix} . '\bin\openssl.exe'      => $Config{prefix},           # strawberry perl
             $Config{prefix} . '\..\c\bin\openssl.exe' => $Config{prefix} . '\..\c', # strawberry perl
@@ -214,7 +233,7 @@ EOM
 EOM
     }
 
-    if ($major > 1.0 || ($major == 1.0 && $minor > 0)) {
+    if ($major > 1.0 || ($major == 1.0 && $minor > 1)) {
         print <<EOM;
 *** That's newer than what this module was tested with
     You should consider checking if there is a newer release of this module
