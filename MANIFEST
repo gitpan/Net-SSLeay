@@ -1,6 +1,7 @@
 Changes
 constants.c
 Credits
+Debian_CPANTS.txt
 examples/bio.pl
 examples/bulk.pl
 examples/callback.pl
@@ -39,21 +40,13 @@ lib/Net/SSLeay.pm
 lib/Net/SSLeay.pod
 lib/Net/SSLeay/Handle.pm
 Makefile.PL
-Makefile.PL.rej
 MANIFEST			This list of files
 META.yml
-net-ssleay-1.32-session-ticket.patch
-Net-SSLeay.ppd
-Net-SSLeay.spec
 ppport.h
 QuickRef
 README
 README.Win32
-searchsummary.ppm
 SSLeay.xs
-SSLeay.xs.rej
-summary.ppm
-t/data/0f89dbb5.0
 t/data/binary-test.file
 t/data/cert.pem
 t/data/cert_paypal.crt.pem
@@ -62,6 +55,9 @@ t/data/cert_twitter.crt.pem
 t/data/cert_twitter.crt.pem_dump
 t/data/key.pem
 t/data/key.pem.e
+t/data/pkcs12-full.p12
+t/data/pkcs12-no-chain.p12
+t/data/pkcs12-no-passwd.p12
 t/data/test_CA1.crl.der
 t/data/test_CA1.crt.der
 t/data/test_CA1.crt.pem
@@ -79,15 +75,11 @@ t/data/testreq1.der
 t/data/testreq1.pem
 t/data/verisign.crl.der
 t/data/verisign.crl.pem
-t/data/pkcs12-full.p12
-t/data/pkcs12-no-chain.p12
-t/data/pkcs12-no-passwd.p12
 t/external/08_external.t
 t/external/15_altnames.t
 t/handle/external/10_destroy.t
 t/handle/external/50_external.t
 t/handle/local/05_use.t
-t/local/00_ptr_cast.t.rej
 t/local/01_pod.t
 t/local/02_pod_coverage.t
 t/local/03_use.t
@@ -111,9 +103,7 @@ t/local/38_priv-key.t
 t/local/39_pkcs12.t
 t/local/40_npn_support.t
 t/local/50_digest.t
-t/local/50_digest.t.rej
 t/local/61_threads-cb-crash.t
 t/local/62_threads-ctx_new-deadlock.t
 t/local/kwalitee.t
-t/local/ptr_cast_test.exe
 typemap
