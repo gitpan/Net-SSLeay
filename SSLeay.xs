@@ -8,7 +8,7 @@
  *
  * Change data removed. See Changes
  *
- * $Id: SSLeay.xs 336 2012-04-04 00:49:34Z mikem-guest $
+ * $Id: SSLeay.xs 338 2012-04-05 21:37:24Z mikem-guest $
  * 
  * The distribution and use of this module are subject to the conditions
  * listed in LICENSE file at the root of OpenSSL-0.9.6b
@@ -766,6 +766,7 @@ int next_proto_select_cb_invoke(SSL *ssl, unsigned char **out, unsigned char *ou
     unsigned char next_proto_len;
     int next_proto_status;
     SSL_CTX *ctx = SSL_get_SSL_CTX(ssl);
+    STRLEN n_a;
 
     PR1("STARTED: next_proto_select_cb_invoke\n");
     cb_func = cb_data_advanced_get(ctx, "next_proto_select_cb!!func");
