@@ -4,7 +4,7 @@
 # Copyright (C) 2005 Florian Ragwitz <rafl@debian.org>, All Rights Reserved.
 # Copyright (C) 2005 Mike McCauley <mikem@open.com.au>, All Rights Reserved.
 #
-# $Id: SSLeay.pm 351 2012-09-24 22:10:06Z mikem-guest $
+# $Id: SSLeay.pm 362 2012-12-12 20:58:07Z mikem-guest $
 #
 # Change data removed from here. See Changes
 # The distribution and use of this module are subject to the conditions
@@ -61,7 +61,7 @@ $Net::SSLeay::slowly = 0;
 $Net::SSLeay::random_device = '/dev/urandom';
 $Net::SSLeay::how_random = 512;
 
-$VERSION = '1.49';
+$VERSION = '1.50';
 @ISA = qw(Exporter);
 
 #BEWARE:
