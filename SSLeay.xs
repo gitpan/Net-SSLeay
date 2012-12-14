@@ -8,7 +8,7 @@
  *
  * Change data removed. See Changes
  *
- * $Id: SSLeay.xs 362 2012-12-12 20:58:07Z mikem-guest $
+ * $Id: SSLeay.xs 363 2012-12-13 19:59:32Z mikem-guest $
  * 
  * The distribution and use of this module are subject to the conditions
  * listed in LICENSE file at the root of OpenSSL-0.9.6b
@@ -1605,6 +1605,9 @@ X509 *
 SSL_get_certificate(s)
      SSL *              s
 
+#if OPENSSL_VERSION_NUMBER >= 0x0090806fL
+#define REM18 "NOTE: requires 0.9.8f+"
+
 SSL_CTX *
 SSL_get_SSL_CTX(s)
      SSL *              s
@@ -1618,6 +1621,8 @@ SSL_ctrl(ssl,cmd,larg,parg)
 	 int cmd
 	 long larg
 	 char * parg
+
+#endif
 
 long
 SSL_CTX_ctrl(ctx,cmd,larg,parg)
