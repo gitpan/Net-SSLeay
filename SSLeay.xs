@@ -8,7 +8,7 @@
  *
  * Change data removed. See Changes
  *
- * $Id: SSLeay.xs 368 2013-03-06 23:53:38Z mikem-guest $
+ * $Id: SSLeay.xs 378 2013-06-07 22:29:53Z mikem-guest $
  * 
  * The distribution and use of this module are subject to the conditions
  * listed in LICENSE file at the root of OpenSSL-0.9.6b
@@ -1118,6 +1118,28 @@ SSL_CTX_tlsv1_new()
      OUTPUT:
      RETVAL
 
+#ifdef SSL_TXT_TLSV1_1
+
+SSL_CTX *
+SSL_CTX_tlsv1_1_new()
+     CODE:
+     RETVAL = SSL_CTX_new (TLSv1_1_method());
+     OUTPUT:
+     RETVAL
+
+#endif
+
+#ifdef SSL_TXT_TLSV1_2
+
+SSL_CTX *
+SSL_CTX_tlsv1_2_new()
+     CODE:
+     RETVAL = SSL_CTX_new (TLSv1_2_method());
+     OUTPUT:
+     RETVAL
+
+#endif
+
 SSL_CTX *
 SSL_CTX_new_with_method(meth)
      SSL_METHOD * meth
@@ -2011,6 +2033,12 @@ X509_sign(X509 *x, EVP_PKEY *pkey, const EVP_MD *md)
 int
 X509_verify(X509 *x, EVP_PKEY *r)
 
+X509_NAME *
+X509_NAME_new()
+
+unsigned long
+X509_NAME_hash(X509_NAME *name)
+
 void
 X509_NAME_oneline(name)
 	X509_NAME *    name
@@ -2690,6 +2718,20 @@ X509_EXTENSION_get_object(X509_EXTENSION *ex)
 int
 X509_get_ext_count(X509 *x)
 
+int
+X509_CRL_get_ext_count(X509_CRL *x)
+
+int
+X509_CRL_get_ext_by_NID(x,ni,loc=-1)
+        X509_CRL* x
+        int ni
+        int loc
+
+X509_EXTENSION *
+X509_CRL_get_ext(x,loc)
+   X509_CRL* x
+   int loc
+
 void
 X509V3_EXT_print(ext,flags=0,utf8_decode=0)
         X509_EXTENSION * ext
@@ -3361,6 +3403,21 @@ SSLv3_method()
 
 const SSL_METHOD *
 TLSv1_method()
+
+#ifdef SSL_TXT_TLSV1_1
+
+const SSL_METHOD *
+TLSv1_1_method()
+
+#endif
+
+#ifdef SSL_TXT_TLSV1_2
+
+const SSL_METHOD *
+TLSv1_2_method()
+
+#endif
+
 
 #if OPENSSL_VERSION_NUMBER < 0x10000000L
 
@@ -4915,6 +4972,16 @@ SSL_export_keying_material(ssl, outlen, label, p)
         PUSHs(sv_2mortal(ret>=0 ? newSVpvn(out, outlen) : newSV(0)));
         EXTEND(SP, 1);
 	Safefree(out);
+
+#endif
+
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L && !defined(OPENSSL_NO_DANE)
+
+void
+SSL_get_tlsa_record_byname(name, port, type);
+        char * name
+        int    port
+        int    type
 
 #endif
 

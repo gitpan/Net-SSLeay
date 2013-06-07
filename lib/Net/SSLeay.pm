@@ -4,7 +4,7 @@
 # Copyright (C) 2005 Florian Ragwitz <rafl@debian.org>, All Rights Reserved.
 # Copyright (C) 2005 Mike McCauley <mikem@airspayce.com>, All Rights Reserved.
 #
-# $Id: SSLeay.pm 373 2013-03-22 22:11:22Z mikem-guest $
+# $Id: SSLeay.pm 378 2013-06-07 22:29:53Z mikem-guest $
 #
 # Change data removed from here. See Changes
 # The distribution and use of this module are subject to the conditions
@@ -61,7 +61,7 @@ $Net::SSLeay::slowly = 0;
 $Net::SSLeay::random_device = '/dev/urandom';
 $Net::SSLeay::how_random = 512;
 
-$VERSION = '1.54';
+$VERSION = '1.55';
 @ISA = qw(Exporter);
 
 #BEWARE:
@@ -1248,9 +1248,9 @@ sub do_httpx3 {
 	$content, $mime_type, $crt_path, $key_path) = @_;
     my ($response, $page, $h,$v);
 
-    if ($content) {
+    my $len = blength($content);
+    if ($len) {
 	$mime_type = "application/x-www-form-urlencoded" unless $mime_type;
-	my $len = blength($content);
 	$content = "Content-Type: $mime_type$CRLF"
 	    . "Content-Length: $len$CRLF$CRLF$content";
     } else {
