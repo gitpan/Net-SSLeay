@@ -1048,7 +1048,7 @@ Check openssl doc L<http://www.openssl.org/docs/ssl/SSL_alert_type_string.html|h
 
 =item * SSLv2_method
 
-Returns SSL_METHOD structure corresponding to SSLv2 method, the return value can be later used as a param of L</CTX_new_with_method>. Only available where suported by the underlying openssl.
+Returns SSL_METHOD structure corresponding to SSLv2 method, the return value can be later used as a param of L</CTX_new_with_method>. Only available where supported by the underlying openssl.
 
  my $rv = Net::SSLeay::SSLv2_method();
  #
@@ -1271,7 +1271,7 @@ Check openssl doc L<http://www.openssl.org/docs/crypto/pem.html|http://www.opens
 
 B<COMPATIBILITY:> not available in Net-SSLeay-1.45 and before
 
-Loads PEM formated X509 certificate via given BIO structure.
+Loads PEM formatted X509 certificate via given BIO structure.
 
  my $rv = Net::SSLeay::PEM_read_bio_X509($bio);
  # $bio - value corresponding to openssl's BIO structure
@@ -1288,7 +1288,7 @@ Example:
 
 B<COMPATIBILITY:> not available in Net-SSLeay-1.45 and before
 
-Loads PEM formated X509_REQ object via given BIO structure.
+Loads PEM formatted X509_REQ object via given BIO structure.
 
  my $rv = Net::SSLeay::PEM_read_bio_X509_REQ($bio, $x=NULL, $cb=NULL, $u=NULL);
  # $bio - value corresponding to openssl's BIO structure
@@ -1323,7 +1323,7 @@ Reads X509_CRL structure from BIO.
 
 B<COMPATIBILITY:> not available in Net-SSLeay-1.45 and before
 
-Loads PEM formated private key via given BIO structure.
+Loads PEM formatted private key via given BIO structure.
 
  my $rv = Net::SSLeay::PEM_read_bio_PrivateKey($bio, $cb, $data);
  # $bio - value corresponding to openssl's BIO structure
@@ -1371,14 +1371,14 @@ Converts/exports X509 certificate to string (PEM format).
 
 B<COMPATIBILITY:> not available in Net-SSLeay-1.45 and before
 
-Converts public key $pk into PEM formated string (optionally protected with password).
+Converts public key $pk into PEM formatted string (optionally protected with password).
 
  my $rv = Net::SSLeay::PEM_get_string_PrivateKey($pk, $passwd, $enc_alg);
  # $pk - value corresponding to openssl's EVP_PKEY structure
  # $passwd - [optional] (string) password to use for key encryption
  # $enc_alg - [optional] algorithm to use for key encryption (default: DES_CBC) - value corresponding to openssl's EVP_CIPHER structure
  #
- # returns: PEM formated string
+ # returns: PEM formatted string
 
 Examples:
 
@@ -1390,7 +1390,7 @@ Examples:
 
 B<COMPATIBILITY:> not available in Net-SSLeay-1.45 and before
 
-Converts X509_CRL object $x509_crl into PEM formated string.
+Converts X509_CRL object $x509_crl into PEM formatted string.
 
  Net::SSLeay::PEM_get_string_X509_CRL($x509_crl);
  # $x509_crl - value corresponding to openssl's X509_CRL structure
@@ -1401,7 +1401,7 @@ Converts X509_CRL object $x509_crl into PEM formated string.
 
 B<COMPATIBILITY:> not available in Net-SSLeay-1.45 and before
 
-Converts X509_REQ object $x509_crl into PEM formated string.
+Converts X509_REQ object $x509_crl into PEM formatted string.
 
  Net::SSLeay::PEM_get_string_X509_REQ($x509_req);
  # $x509_req - value corresponding to openssl's X509_REQ structure
@@ -1418,7 +1418,7 @@ Converts X509_REQ object $x509_crl into PEM formated string.
 
 B<COMPATIBILITY:> not available in Net-SSLeay-1.45 and before
 
-Loads DER formated X509 certificate via given BIO structure.
+Loads DER formatted X509 certificate via given BIO structure.
 
  my $rv = Net::SSLeay::d2i_X509_bio($bp);
  # $bp - value corresponding to openssl's BIO structure
@@ -1437,7 +1437,7 @@ Check openssl doc L<http://www.openssl.org/docs/crypto/d2i_X509.html|http://www.
 
 B<COMPATIBILITY:> not available in Net-SSLeay-1.45 and before
 
-Loads DER formated X509_CRL object via given BIO structure.
+Loads DER formatted X509_CRL object via given BIO structure.
 
  my $rv = Net::SSLeay::d2i_X509_CRL_bio($bp);
  # $bp - value corresponding to openssl's BIO structure
@@ -1454,7 +1454,7 @@ Example:
 
 B<COMPATIBILITY:> not available in Net-SSLeay-1.45 and before
 
-Loads DER formated X509_REQ object via given BIO structure.
+Loads DER formatted X509_REQ object via given BIO structure.
 
  my $rv = Net::SSLeay::d2i_X509_REQ_bio($bp);
  # $bp - value corresponding to openssl's BIO structure
@@ -1514,7 +1514,7 @@ Examples:
 =item * d2i_SSL_SESSION
 
 Transforms the external ASN1 representation of an SSL/TLS session, stored as binary data
-at location pp with length length, into an SSL_SESSION object.
+at location pp with length of $length, into an SSL_SESSION object.
 
 ??? (does this function really work?)
 
@@ -1693,7 +1693,7 @@ Technically the same functionality as L</SESSION_get_timeout>.
 
 B<NOTE:> Does not exactly correspond to any low level API function
 
-Prints session details (e.g. protocol version, ciprher, session-id ...) to BIO.
+Prints session details (e.g. protocol version, cipher, session-id ...) to BIO.
 
  my $rv = Net::SSLeay::SESSION_print($fp, $ses);
  # $fp - value corresponding to openssl's BIO structure
@@ -1711,7 +1711,7 @@ You have to use necessary BIO functions like this:
 
 =item * SESSION_print_fp
 
-Prints session details (e.g. protocol version, ciprher, session-id ...) to file handle.
+Prints session details (e.g. protocol version, cipher, session-id ...) to file handle.
 
  my $rv = Net::SSLeay::SESSION_print_fp($fp, $ses);
  # $fp - perl file handle
@@ -3320,6 +3320,17 @@ Get the X509 certificate of the peer.
 
 Check openssl doc L<http://www.openssl.org/docs/ssl/SSL_get_peer_certificate.html|http://www.openssl.org/docs/ssl/SSL_get_peer_certificate.html>
 
+=item * get_peer_cert_chain
+
+Get the certificate chain of the peer as an array of X509 structures.
+
+ my @rv = Net::SSLeay::get_peer_certificate($ssl);
+ # $ssl - value corresponding to openssl's SSL structure
+ #
+ # returns: list of X509 structures
+
+Check openssl doc L<http://www.openssl.org/docs/ssl/SSL_get_peer_certificate.html|http://www.openssl.org/docs/ssl/SSL_get_peer_certificate.html>
+
 =item * get_quiet_shutdown
 
 Returns the 'quiet shutdown' setting of ssl.
@@ -3595,7 +3606,7 @@ Check openssl doc L<http://www.openssl.org/docs/ssl/SSL_get_rbio.html|http://www
 
 =item * load_client_CA_file
 
-Load X509 certificates from file (PEM formated).
+Load X509 certificates from file (PEM formatted).
 
  my $rv = Net::SSLeay::load_client_CA_file($file);
  # $file - (string) file name
@@ -3643,7 +3654,7 @@ Executes SSL_CTRL_GET_TOTAL_RENEGOTIATIONS command on $ssl.
 =item * peek
 
 Copies $max bytes from the specified $ssl into the returned value.
-In constrast to the C<Net::SSLeay::read()> function, the data in the SSL
+In contrast to the C<Net::SSLeay::read()> function, the data in the SSL
 buffer is unmodified after the SSL_peek() operation.
 
  Net::SSLeay::peek($ssl, $max);
@@ -4203,7 +4214,7 @@ Check openssl doc L<http://www.openssl.org/docs/ssl/SSL_write.html|http://www.op
 
 B<NOTE:> Does not exactly correspond to any low level API function
 
-Writes a fragment of data data from the buffer $data into the specified $ssl connection.
+Writes a fragment of data in $data from the buffer $data into the specified $ssl connection.
 
  my $rv = Net::SSLeay::write_partial($ssl, $from, $count, $data);
  # $ssl - value corresponding to openssl's SSL structure
@@ -4493,7 +4504,7 @@ Check openssl doc L<http://www.openssl.org/docs/crypto/OBJ_nid2obj.html|http://w
 
 =item * OBJ_txt2nid
 
-Returns NID corresponding to text string $s which can be a long name, a short name or the numerical respresentation of an object.
+Returns NID corresponding to text string $s which can be a long name, a short name or the numerical representation of an object.
 
  my $rv = Net::SSLeay::OBJ_txt2nid($s);
  # $s - (string) e.g. 'commonName' or 'CN' or '2.5.4.3'
@@ -5836,7 +5847,7 @@ Verifies X509_CRL object $a using public key $r (pubkey of issuing CA).
 
 B<COMPATIBILITY:> not available in Net-SSLeay-1.45 and before; requires at least openssl-0.9.7
 
-Adds given serian number $serial_hex to X509_CRL object $crl.
+Adds given serial number $serial_hex to X509_CRL object $crl.
 
  Net::SSLeay::P_X509_CRL_add_revoked_serial_hex($crl, $serial_hex, $rev_time, $reason_code, $comp_time);
  # $crl - value corresponding to openssl's X509_CRL structure
@@ -6167,7 +6178,7 @@ such entry exists -1 is returned.
 B<openssl note:> this is a legacy function which has various limitations which
 makes it of minimal use in practice. It can only find the first matching
 entry and will copy the contents of the field verbatim: this can be highly
-confusing if the target is a muticharacter string type like a BMPString or a UTF8String.
+confusing if the target is a multicharacter string type like a BMPString or a UTF8String.
 
  Net::SSLeay::X509_NAME_get_text_by_NID($name, $nid);
  # $name - value corresponding to openssl's X509_NAME structure
@@ -6303,7 +6314,7 @@ Is used to store application data at arg for idx into $x509_store_ctx.
 
 =item * X509_STORE_CTX_set_cert
 
-Sets the certificate to be vertified in $x509_store_ctx to $x.
+Sets the certificate to be verified in $x509_store_ctx to $x.
 
  Net::SSLeay::X509_STORE_CTX_set_cert($x509_store_ctx, $x);
  # $x509_store_ctx - value corresponding to openssl's X509_STORE_CTX structure
@@ -6638,7 +6649,7 @@ Check openssl doc L<http://www.openssl.org/docs/crypto/EVP_EncryptInit.html|http
 
 =over
 
-=item * OpenSSL_add_all_digests
+=item * OpenSSL_add_all_digest
 
 B<COMPATIBILITY:> not available in Net-SSLeay-1.42 and before
 
@@ -6659,7 +6670,7 @@ B<NOTE:> Does not exactly correspond to any low level API function
 
 The returned digest names correspond to values expected by L</EVP_get_digestbyname>.
 
-Note that some of the digets are available by default and some only after calling L</OpenSSL_add_all_digests>.
+Note that some of the digests are available by default and some only after calling L</OpenSSL_add_all_digests>.
 
 =item * EVP_get_digestbyname
 
@@ -7064,7 +7075,7 @@ Check openssl doc L<http://www.openssl.org/docs/crypto/BIO_f_ssl.html|http://www
 
 =item * BIO_new_file
 
-Creates a new file BIO with mode mode the meaning of mode is the same
+Creates a new file BIO with mode $mode the meaning of mode is the same
 as the stdio function fopen(). The BIO_CLOSE flag is set on the returned BIO.
 
  my $rv = Net::SSLeay::BIO_new_file($filename, $mode);
@@ -7273,12 +7284,16 @@ More complete example:
 
 =head3 Low level API: NPN (next protocol negotiation) related functions
 
+NPN is being replaced with ALPN, a more recent TLS extension for application
+protocol negotiation that's in process of being adopted by IETF. Please look
+below for APLN API description.
+
 Simple approach for using NPN support looks like this:
 
  ### client side
  use Net::SSLeay;
  use IO::Socket::INET;
- 
+
  Net::SSLeay::initialize();
  my $sock = IO::Socket::INET->new(PeerAddr=>'encrypted.google.com:443') or die;
  my $ctx = Net::SSLeay::CTX_tlsv1_new() or die;
@@ -7434,6 +7449,147 @@ Returns the result of the last negotiation for given SSL connection $ssl.
 
 =back
 
+=head3 Low level API: ALPN (application layer protocol negotiation) related functions
+
+Application protocol can be negotiated via two different mechanisms employing
+two different TLS extensions: NPN (obsolete) and ALPN (recommended).
+
+The API is rather similar, with slight differences reflecting protocol
+specifics. In particular, with ALPN the protocol negotiation takes place on
+server, while with NPN the client implements the protocol negotiation logic.
+
+With ALPN, the most basic implementation looks like this:
+
+ ### client side
+ use Net::SSLeay;
+ use IO::Socket::INET;
+
+ Net::SSLeay::initialize();
+ my $sock = IO::Socket::INET->new(PeerAddr=>'encrypted.google.com:443') or die;
+ my $ctx = Net::SSLeay::CTX_tlsv1_new() or die;
+ Net::SSLeay::CTX_set_options($ctx, &Net::SSLeay::OP_ALL);
+ Net::SSLeay::CTX_set_alpn_protos($ctx, ['http/1.1', 'http/2.0', 'spdy/3]);
+ my $ssl = Net::SSLeay::new($ctx) or die;
+ Net::SSLeay::set_fd($ssl, fileno($sock)) or die;
+ Net::SSLeay::connect($ssl);
+
+ warn "client:selected=",Net::SSLeay::P_alpn_selected($ssl), "\n";
+
+ ### server side
+ use Net::SSLeay;
+ use IO::Socket::INET;
+
+ Net::SSLeay::initialize();
+ my $ctx = Net::SSLeay::CTX_tlsv1_new() or die;
+ Net::SSLeay::CTX_set_options($ctx, &Net::SSLeay::OP_ALL);
+ Net::SSLeay::set_cert_and_key($ctx, "t/data/cert.pem", "t/data/key.pem");
+ Net::SSLeay::CTX_set_alpn_select_cb($ctx, ['http/1.1', 'http/2.0', 'spdy/3]);
+ my $sock = IO::Socket::INET->new(LocalAddr=>'localhost', LocalPort=>5443, Proto=>'tcp', Listen=>20) or die;
+
+ while (1) {
+   my $ssl = Net::SSLeay::new($ctx);
+   warn("server:waiting for incoming connection...\n");
+   my $fd = $sock->accept();
+   Net::SSLeay::set_fd($ssl, $fd->fileno);
+   Net::SSLeay::accept($ssl);
+   warn "server:selected=",Net::SSLeay::P_alpn_selected($ssl),"\n";
+   my $got = Net::SSLeay::read($ssl);
+   Net::SSLeay::ssl_write_all($ssl, "length=".length($got));
+   Net::SSLeay::free($ssl);
+   $fd->close();
+ }
+ # check with: openssl s_client -connect localhost:5443 -alpn spdy/3,http/1.1
+
+Advanced approach allows you to implement your own negotiation algorithm.
+
+ #see below documentation for:
+ Net::SSleay::CTX_set_alpn_select_cb($ctx, $perl_callback_function, $callback_data);
+
+Detection of ALPN support (works even in older Net::SSLeay versions):
+
+ use Net::SSLeay;
+
+ if (exists &Net::SSLeay::P_alpn_selected) {
+   # do ALPN stuff
+ }
+
+=over
+
+=item * CTX_set_alpn_select_cb
+
+B<COMPATIBILITY:> not available in Net-SSLeay-1.55 and before; requires at least openssl-1.0.2
+
+B<NOTE:> You need CTX_set_alpn_select_cb on B<server side> of TLS connection.
+
+Simple usage - in this case a "common" negotiation algorithm (as implemented by openssl's function SSL_select_next_proto) is used.
+
+ $rv = Net::SSleay::CTX_set_alpn_select_cb($ctx, $arrayref);
+ # $ctx - value corresponding to openssl's SSL_CTX structure
+ # $arrayref - list of accepted protocols - e.g. ['http/2.0', 'http/1.1', 'spdy/3']
+ #
+ # returns: 0 on success, 1 on failure
+
+Advanced usage (you probably do not need this):
+
+ $rv = Net::SSleay::CTX_set_alpn_select_cb($ctx, $perl_callback_function, $callback_data);
+ # $ctx - value corresponding to openssl's SSL_CTX structure
+ # $perl_callback_function - reference to perl function
+ # $callback_data - [optional] data to passed to callback function when invoked
+ #
+ # returns: 0 on success, 1 on failure
+
+ # where callback function looks like
+ sub alpn_select_cb_invoke {
+   my ($ssl, $arrayref_proto_list_advertised_by_client, $callback_data) = @_;
+   # ...
+   if ($negotiated) {
+     return 'http/2.0';
+   } else {
+     return undef;
+   }
+ }
+
+To undefine/clear this callback use:
+
+ Net::SSleay::CTX_set_alpn_select_cb($ctx, undef);
+
+=item * set_alpn_protos
+
+B<COMPATIBILITY:> not available in Net-SSLeay-1.55 and before; requires at least openssl-1.0.2
+
+B<NOTE:> You need set_alpn_protos on B<client side> of TLS connection.
+
+This adds list of supported application layer protocols to ClientHello message sent by a client.
+It advertises the enumeration of supported protocols:
+
+ Net::SSLeay::set_alpn_protos($ssl, ['http/1.1', 'http/2.0', 'spdy/3]);
+ # returns 0 on success
+
+=item * CTX_set_alpn_protos
+
+B<COMPATIBILITY:> not available in Net-SSLeay-1.55 and before; requires at least openssl-1.0.2
+
+B<NOTE:> You need CTX_set_alpn_protos on B<client side> of TLS connection.
+
+This adds list of supported application layer protocols to ClientHello message sent by a client.
+It advertises the enumeration of supported protocols:
+
+ Net::SSLeay::CTX_set_alpn_protos($ctx, ['http/1.1', 'http/2.0', 'spdy/3]);
+ # returns 0 on success
+
+=item * P_alpn_selected
+
+B<COMPATIBILITY:> not available in Net-SSLeay-1.55 and before; requires at least openssl-1.0.2
+
+Returns the name of negotiated protocol for given TLS connection $ssl.
+
+ $rv = Net::SSLeay::P_alpn_selected($ssl)
+ # $ssl - value corresponding to openssl's SSL structure
+ #
+ # returns: (string) negotiated protocol name (or undef if no negotiation was done or failed with fatal error)
+
+=back
+
 =head3 Low level API: DANE Support
 
 OpenSSL version 1.0.2 adds preliminary support RFC6698 Domain Authentication of
@@ -7443,7 +7599,7 @@ Named Entities (DANE) Transport Layer Association within OpenSSL
 
 =item * SSL_get_tlsa_record_byname
 
-B<COMPATIBILITY:> Requires at least openssl-1.0.2
+B<COMPATIBILITY:> DELETED from net-ssleay, since it is not supported by OpenSSL
 
 In order to facilitate DANE there is additional interface,
 SSL_get_tlsa_record_byname, accepting hostname, port and socket type
@@ -8051,7 +8207,7 @@ during C<make test> to do just that).
 
 =head1 SECURITY
 
-You can mitigate some of the security vulnerabilites that might be present in your SSL/TLS application: 
+You can mitigate some of the security vulnerabilities that might be present in your SSL/TLS application: 
 
 
 =head2 BEAST Attack
@@ -8072,7 +8228,7 @@ Solutions:
 
 =item * Ensure SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS is not enabled (its not enabled by default)
 
-=item * Dont support SSLv2, SSLv3
+=item * Don't support SSLv2, SSLv3
 
 =item * Actively control the ciphers your server supports with set_cipher_list:
 
@@ -8175,7 +8331,7 @@ All Rights Reserved.
 Distribution and use of this module is under the same terms as the
 OpenSSL package itself (i.e. free, but mandatory attribution; NO
 WARRANTY). Please consult LICENSE file in the root of the OpenSSL
-distribution.
+distribution, and also included in this distribution.
 
 While the source distribution of this perl module does not contain
 Eric's or OpenSSL's code, if you use this module you will use OpenSSL
